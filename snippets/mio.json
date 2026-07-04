@@ -1,0 +1,77 @@
+{
+    "Function Definition": {
+        "prefix": "def",
+        "body": [
+            "def ${1:return_type} ${2:function_name}(${3:params}) {",
+            "\t${4:// body}",
+            "\treturn ${5:value};",
+            "}"
+        ],
+        "description": "Define a function"
+    },
+    "Main Function": {
+        "prefix": "main",
+        "body": [
+            "def void main() {",
+            "\t${1:printf(\"Hello World!\\n\");}",
+            "}"
+        ],
+        "description": "Main entry point"
+    },
+    "If Statement": {
+        "prefix": "if",
+        "body": [
+            "if:${1:condition} {",
+            "\t${2:// body}",
+            "}"
+        ],
+        "description": "If statement"
+    },
+    "Variable Declaration": {
+        "prefix": "var",
+        "body": "var ${1:name}: ${2:type} = ${3:value};",
+        "description": "Declare a variable"
+    },
+    "Constant Declaration": {
+        "prefix": "const",
+        "body": "const ${1:NAME}: ${2:type} = ${3:value};",
+        "description": "Declare a constant"
+    },
+    "Import Statement": {
+        "prefix": "import",
+        "body": "import ${1:stdio.h};",
+        "description": "Import a header"
+    },
+    "While Loop": {
+        "prefix": "while",
+        "body": [
+            "while:${1:condition} {",
+            "\t${2:// body}",
+            "}"
+        ],
+        "description": "While loop"
+    },
+    "For Loop": {
+        "prefix": "for",
+        "body": [
+            "for:${1:init}; ${2:condition}; ${3:increment} {",
+            "\t${4:// body}",
+            "}"
+        ],
+        "description": "For loop"
+    },
+    "Struct Definition": {
+        "prefix": "struct",
+        "body": [
+            "struct ${1:Name} {",
+            "\t${2:field1}: ${3:type};",
+            "\t${4:field2}: ${5:type};",
+            "",
+            "\tdef ${1:Name}(${6:params}) {",
+            "\t\t${7:// constructor body}",
+            "\t}",
+            "}"
+        ],
+        "description": "Define a struct"
+    }
+}

@@ -1,0 +1,7 @@
+.vscode-test/**
+.gitignore
+.gitattributes
+vsc-extension-quickstart.md
+.git/**
+node_modules/**
+*.vsix

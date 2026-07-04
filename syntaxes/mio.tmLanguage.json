@@ -1,0 +1,83 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "Mio",
+	"scopeName": "source.mio",
+	"patterns": [
+		{
+			"include": "#keywords"
+		},
+		{
+			"include": "#types"
+		},
+		{
+			"include": "#strings"
+		},
+		{
+			"include": "#numbers"
+		},
+		{
+			"include": "#comments"
+		},
+		{
+			"include": "#functions"
+		}
+	],
+	"repository": {
+		"keywords": {
+			"patterns": [
+				{
+					"name": "keyword.control.mio",
+					"match": "\\b(if|else|elif|while|for|return|break|continue|match|use)\\b"
+				},
+				{
+					"name": "keyword.def.mio",
+					"match": "\\b(def|import|var|const|struct|enum|union)\\b"
+				}
+			]
+		},
+		"types": {
+			"patterns": [
+				{
+					"name": "storage.type.primitive.mio",
+					"match": "\\b(i|u|f)(32|64)\\b"
+				},
+				{
+					"name": "storage.type.primitive.mio",
+					"match": "\\b(bool|char|void)\\b"
+				},
+				{
+					"name": "entity.name.type.mio",
+					"match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+				}
+			]
+		},
+		"strings": {
+			"name": "string.quoted.double.mio",
+			"begin": "\"",
+			"end": "\"",
+			"patterns": [
+				{
+					"name": "constant.character.escape.mio",
+					"match": "\\\\."
+				}
+			]
+		},
+		"numbers": {
+			"match": "\\b\\d+(\\.\\d+)?\\b",
+			"name": "constant.numeric.mio"
+		},
+		"comments": {
+			"name": "comment.line.number-sign.mio",
+			"match": "#.*$"
+		},
+		"functions": {
+			"name": "entity.name.function.mio",
+			"match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(",
+			"captures": {
+				"1": {
+					"name": "entity.name.function.mio"
+				}
+			}
+		}
+	}
+}

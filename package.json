@@ -1,0 +1,40 @@
+{
+  "name": "mioforvscode",
+  "displayName": "miolanguage",
+  "description": "mio for vscode",
+  "version": "0.0.1",
+  "publisher": "HZY1618yzh",
+  "license": "MIT",
+  "repository": {
+      "type": "git",
+      "url": "https://github.com/mioLanguage/vscode-mio"
+  },
+  "homepage": "https://mio.hzy.us.kg",
+  "bugs": {
+      "url": "https://github.com/mioLanguage/vscode-mio/issues"
+  },
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "mio",
+      "aliases": ["Mio", "mio"],
+      "extensions": [".mio"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "mio",
+      "scopeName": "source.mio",
+      "path": "./syntaxes/mio.tmLanguage.json"
+    }],
+	"snippets": [{
+		"language": "mio",
+		"path": "./snippets/mio.json"
+	}]
+  }
+}
