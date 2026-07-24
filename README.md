@@ -40,7 +40,7 @@ mioc --version
 ```json
 {
     "code-runner.executorMap": {
-        "mio": "mioc $fullFileName && gcc $fileNameWithoutExt.c -o $fileNameWithoutExt && ./$fileNameWithoutExt"
+        "mio": "mioc $fullFileName -o $fileNameWithoutExt && ./$fileNameWithoutExt"
     }
 }
 ```
@@ -49,8 +49,6 @@ mioc --version
 
 - 打开任意 `.mio` 文件
 - 按 `Ctrl+Alt+N`（Windows/Linux）或 `Cmd+Alt+N`（macOS）即可编译并运行
-
-> 注意：上述命令假设你已安装 GCC 用于编译生成的 C 代码。如果没有 GCC，可手动运行生成的 `.c` 文件。
 
 ## 语法示例
 
