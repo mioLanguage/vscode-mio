@@ -2,7 +2,7 @@
   "name": "mioforvscode",
   "displayName": "miolanguage",
   "description": "mio for vscode",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "HZY1618yzh",
   "license": "MIT",
   "repository": {
@@ -14,12 +14,23 @@
       "url": "https://github.com/mioLanguage/vscode-mio/issues"
   },
   "icon": "icon.png",
+  "main": "./out/extension.js",
   "engines": {
     "vscode": "^1.85.0"
   },
+  "activationEvents": [
+    "onLanguage:mio"
+  ],
   "categories": [
     "Programming Languages"
   ],
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -b",
+    "watch": "tsc -b -w",
+    "compile:server": "npm --prefix server run compile",
+    "postinstall": "npm --prefix server install"
+  },
   "contributes": {
     "languages": [{
       "id": "mio",
@@ -32,9 +43,17 @@
       "scopeName": "source.mio",
       "path": "./syntaxes/mio.tmLanguage.json"
     }],
-	"snippets": [{
-		"language": "mio",
-		"path": "./snippets/mio.json"
-	}]
+    "snippets": [{
+      "language": "mio",
+      "path": "./snippets/mio.json"
+    }]
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
   }
 }

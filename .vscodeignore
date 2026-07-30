@@ -3,5 +3,10 @@
 .gitattributes
 vsc-extension-quickstart.md
 .git/**
+src/**
+server/src/**
+server/node_modules/**
+tsconfig.json
+server/tsconfig.json
 node_modules/**
 *.vsix

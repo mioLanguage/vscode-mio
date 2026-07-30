@@ -1,77 +1,170 @@
 {
-    "Function Definition": {
-        "prefix": "def",
-        "body": [
-            "def ${1:return_type} ${2:function_name}(${3:params}) {",
-            "\t${4:// body}",
-            "\treturn ${5:value};",
-            "}"
-        ],
-        "description": "Define a function"
-    },
-    "Main Function": {
-        "prefix": "main",
-        "body": [
-            "def void main() {",
-            "\t${1:printf(\"Hello World!\\n\");}",
-            "}"
-        ],
-        "description": "Main entry point"
-    },
-    "If Statement": {
-        "prefix": "if",
-        "body": [
-            "if:${1:condition} {",
-            "\t${2:// body}",
-            "}"
-        ],
-        "description": "If statement"
-    },
-    "Variable Declaration": {
-        "prefix": "var",
-        "body": "var ${1:name}: ${2:type} = ${3:value};",
-        "description": "Declare a variable"
-    },
-    "Constant Declaration": {
-        "prefix": "const",
-        "body": "const ${1:NAME}: ${2:type} = ${3:value};",
-        "description": "Declare a constant"
-    },
-    "Import Statement": {
-        "prefix": "import",
-        "body": "import ${1:stdio.h};",
-        "description": "Import a header"
-    },
-    "While Loop": {
-        "prefix": "while",
-        "body": [
-            "while:${1:condition} {",
-            "\t${2:// body}",
-            "}"
-        ],
-        "description": "While loop"
-    },
-    "For Loop": {
-        "prefix": "for",
-        "body": [
-            "for:${1:init}; ${2:condition}; ${3:increment} {",
-            "\t${4:// body}",
-            "}"
-        ],
-        "description": "For loop"
-    },
-    "Struct Definition": {
-        "prefix": "struct",
-        "body": [
-            "struct ${1:Name} {",
-            "\t${2:field1}: ${3:type};",
-            "\t${4:field2}: ${5:type};",
-            "",
-            "\tdef ${1:Name}(${6:params}) {",
-            "\t\t${7:// constructor body}",
-            "\t}",
-            "}"
-        ],
-        "description": "Define a struct"
-    }
+	"Function Definition": {
+		"prefix": "fn",
+		"body": [
+			"${1:void} ${2:function_name}(${3:params}) {",
+			"\t${4:// body}",
+			"}"
+		],
+		"description": "Define a function"
+	},
+	"Main Function": {
+		"prefix": "main",
+		"body": [
+			"i32 main() {",
+			"\t${1:printf(\"Hello World!\\n\");}",
+			"\treturn 0;",
+			"}"
+		],
+		"description": "Main entry point"
+	},
+	"If Statement": {
+		"prefix": "if",
+		"body": [
+			"if:${1:condition} {",
+			"\t${2:// body}",
+			"}"
+		],
+		"description": "If statement"
+	},
+	"If-Elif-Else Statement": {
+		"prefix": "ifel",
+		"body": [
+			"if:${1:condition} {",
+			"\t${2:// body}",
+			"} elif:${3:condition} {",
+			"\t${4:// body}",
+			"} else {",
+			"\t${5:// body}",
+			"}"
+		],
+		"description": "If-elif-else statement"
+	},
+	"Variable Declaration": {
+		"prefix": "var",
+		"body": "var ${1:name}: ${2:type} = ${3:value};",
+		"description": "Declare a variable"
+	},
+	"Constant Declaration": {
+		"prefix": "const",
+		"body": "const ${1:NAME}: ${2:type} = ${3:value};",
+		"description": "Declare a constant"
+	},
+	"Import Statement": {
+		"prefix": "import",
+		"body": "import ${1:stdio.h};",
+		"description": "Import a header"
+	},
+	"While Loop": {
+		"prefix": "while",
+		"body": [
+			"while:${1:condition} {",
+			"\t${2:// body}",
+			"}"
+		],
+		"description": "While loop"
+	},
+	"For Loop": {
+		"prefix": "for",
+		"body": [
+			"for:${1:init}; ${2:condition}; ${3:increment} {",
+			"\t${4:// body}",
+			"}"
+		],
+		"description": "For loop"
+	},
+	"Struct Definition": {
+		"prefix": "struct",
+		"body": [
+			"struct ${1:Name} {",
+			"\t${2:field1}: ${3:type};",
+			"\t${4:field2}: ${5:type};",
+			"",
+			"\t${1:Name}(${6:params}) {",
+			"\t\t${7:// constructor body}",
+			"\t}",
+			"}"
+		],
+		"description": "Define a struct"
+	},
+	"Class Definition": {
+		"prefix": "class",
+		"body": [
+			"class ${1:Name} {",
+			"public:",
+			"\t${2:field}: ${3:type};",
+			"",
+			"\t${1:Name}(${4:params}) {",
+			"\t\t${5:// constructor body}",
+			"\t}",
+			"",
+			"\t~${1:Name}() {",
+			"\t\t${6:// destructor body}",
+			"\t}",
+			"}"
+		],
+		"description": "Define a class"
+	},
+	"Enum Definition": {
+		"prefix": "enum",
+		"body": [
+			"enum ${1:Name} {",
+			"\t${2:Variant1},",
+			"\t${3:Variant2},",
+			"}"
+		],
+		"description": "Define an enum"
+	},
+	"Union Definition": {
+		"prefix": "union",
+		"body": [
+			"union ${1:Name} {",
+			"\t${2:field1}: ${3:type};",
+			"\t${4:field2}: ${5:type};",
+			"}"
+		],
+		"description": "Define a union"
+	},
+	"Namespace Definition": {
+		"prefix": "namespace",
+		"body": [
+			"namespace ${1:name} {",
+			"\t${2:// members}",
+			"}"
+		],
+		"description": "Define a namespace"
+	},
+	"Template Function": {
+		"prefix": "template",
+		"body": [
+			"template<${1:T}:typename>",
+			"${2:T} ${3:function_name}(${4:a}: ${2:T}, ${5:b}: ${2:T}) {",
+			"\t${6:// body}",
+			"}"
+		],
+		"description": "Define a template function"
+	},
+	"Extern Declaration": {
+		"prefix": "extern",
+		"body": "extern ${1:void} ${2:function_name}(${3:params});",
+		"description": "Declare an external function"
+	},
+	"Macro Definition": {
+		"prefix": "macro",
+		"body": "macro ${1:NAME};",
+		"description": "Define a macro"
+	},
+	"Conditional Compilation": {
+		"prefix": "@if",
+		"body": [
+			"@if ${1:MACRO_NAME}",
+			"\t${2:// code}",
+			"@elif ${3:OTHER_MACRO}",
+			"\t${4:// code}",
+			"@else",
+			"\t${5:// code}",
+			"@end"
+		],
+		"description": "Conditional compilation block"
+	}
 }

@@ -1,167 +1,178 @@
 {
-    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-    "name": "Mio",
-    "scopeName": "source.mio",
-    "patterns": [
-        {
-            "include": "#comments"
-        },
-        {
-            "include": "#preprocessor"
-        },
-        {
-            "include": "#declarations"
-        },
-        {
-            "include": "#control"
-        },
-        {
-            "include": "#types"
-        },
-        {
-            "include": "#operators"
-        },
-        {
-            "include": "#strings"
-        },
-        {
-            "include": "#numbers"
-        },
-        {
-            "include": "#constants"
-        }
-    ],
-    "repository": {
-        "comments": {
-            "patterns": [
-                {
-                    "name": "comment.line.number-sign.mio",
-                    "match": "#.*$"
-                },
-                {
-                    "begin": "/\\*",
-                    "end": "\\*/",
-                    "name": "comment.block.mio"
-                }
-            ]
-        },
-        "preprocessor": {
-            "patterns": [
-                {
-                    "name": "keyword.control.directive.mio",
-                    "match": "\\b(import|extern|macro)\\b"
-                },
-                {
-                    "name": "keyword.control.directive.conditional.mio",
-                    "match": "@(if|elif|else|end)\\b"
-                }
-            ]
-        },
-        "declarations": {
-            "patterns": [
-                {
-                    "name": "storage.type.declaration.mio",
-                    "match": "\\b(var|const|def|static|operator)\\b"
-                },
-                {
-                    "name": "storage.type.struct.mio",
-                    "match": "\\b(struct|enum|union)\\b"
-                }
-            ]
-        },
-        "control": {
-            "patterns": [
-                {
-                    "name": "keyword.control.mio",
-                    "match": "\\b(if|else|elif|while|for|break|continue|goto|return|this)\\b"
-                }
-            ]
-        },
-        "types": {
-            "patterns": [
-                {
-                    "name": "storage.type.primitive.mio",
-                    "match": "\\b(i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|usize|isize|f32|f64|bool|char|void)\\b"
-                }
-            ]
-        },
-        "operators": {
-            "patterns": [
-                {
-                    "name": "keyword.operator.arithmetic.mio",
-                    "match": "(\\+|-|\\*|/|%)"
-                },
-                {
-                    "name": "keyword.operator.comparison.mio",
-                    "match": "(==|!=|<=|>=|<|>)"
-                },
-                {
-                    "name": "keyword.operator.logical.mio",
-                    "match": "(&&|\\|\\||!)"
-                },
-                {
-                    "name": "keyword.operator.bitwise.mio",
-                    "match": "(&|\\||\\^|~|<<|>>)"
-                },
-                {
-                    "name": "keyword.operator.assignment.mio",
-                    "match": "="
-                },
-                {
-                    "name": "keyword.operator.access.mio",
-                    "match": "(\\.|->)"
-                }
-            ]
-        },
-        "strings": {
-            "patterns": [
-                {
-                    "name": "string.quoted.double.mio",
-                    "begin": "\"",
-                    "end": "\"",
-                    "patterns": [
-                        {
-                            "name": "constant.character.escape.mio",
-                            "match": "\\\\(n|t|r|\\\\|\\\"|0)"
-                        }
-                    ]
-                },
-                {
-                    "name": "string.quoted.single.mio",
-                    "begin": "'",
-                    "end": "'",
-                    "patterns": [
-                        {
-                            "name": "constant.character.escape.mio",
-                            "match": "\\\\(n|t|r|\\\\|'|0)"
-                        }
-                    ]
-                }
-            ]
-        },
-        "numbers": {
-            "patterns": [
-                {
-                    "name": "constant.numeric.integer.mio",
-                    "match": "\\b\\d+\\b"
-                },
-                {
-                    "name": "constant.numeric.hex.mio",
-                    "match": "\\b0[xX][0-9a-fA-F]+\\b"
-                },
-                {
-                    "name": "constant.numeric.float.mio",
-                    "match": "\\b\\d+\\.\\d+\\b"
-                }
-            ]
-        },
-        "constants": {
-            "patterns": [
-                {
-                    "name": "constant.language.boolean.mio",
-                    "match": "\\b(true|false)\\b"
-                }
-            ]
-        }
-    }
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "Mio",
+	"scopeName": "source.mio",
+	"patterns": [
+		{
+			"include": "#comments"
+		},
+		{
+			"include": "#preprocessor"
+		},
+		{
+			"include": "#declarations"
+		},
+		{
+			"include": "#control"
+		},
+		{
+			"include": "#types"
+		},
+		{
+			"include": "#operators"
+		},
+		{
+			"include": "#strings"
+		},
+		{
+			"include": "#numbers"
+		},
+		{
+			"include": "#constants"
+		}
+	],
+	"repository": {
+		"comments": {
+			"patterns": [
+				{
+					"name": "comment.line.number-sign.mio",
+					"match": "#.*$"
+				}
+			]
+		},
+		"preprocessor": {
+			"patterns": [
+				{
+					"name": "keyword.control.directive.mio",
+					"match": "\\b(import|extern|macro)\\b"
+				},
+				{
+					"name": "keyword.control.directive.conditional.mio",
+					"match": "@(if|elif|else|end)\\b"
+				}
+			]
+		},
+		"declarations": {
+			"patterns": [
+				{
+					"name": "storage.type.declaration.mio",
+					"match": "\\b(var|const|static|operator)\\b"
+				},
+				{
+					"name": "storage.type.struct.mio",
+					"match": "\\b(struct|enum|union|class|namespace)\\b"
+				},
+				{
+					"name": "storage.type.access.mio",
+					"match": "\\b(public|private|protected)\\b"
+				},
+				{
+					"name": "storage.type.modifier.mio",
+					"match": "\\b(virtual|override)\\b"
+				},
+				{
+					"name": "storage.type.template.mio",
+					"match": "\\b(template|typename)\\b"
+				}
+			]
+		},
+		"control": {
+			"patterns": [
+				{
+					"name": "keyword.control.mio",
+					"match": "\\b(if|else|elif|while|for|break|continue|goto|return|this)\\b"
+				}
+			]
+		},
+		"types": {
+			"patterns": [
+				{
+					"name": "storage.type.primitive.mio",
+					"match": "\\b(i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|usize|isize|f32|f64|bool|char|void)\\b"
+				}
+			]
+		},
+		"operators": {
+			"patterns": [
+				{
+					"name": "keyword.operator.assignment.compound.mio",
+					"match": "(\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<=|>>=)"
+				},
+				{
+					"name": "keyword.operator.arithmetic.mio",
+					"match": "(\\+|-|\\*|/|%)"
+				},
+				{
+					"name": "keyword.operator.comparison.mio",
+					"match": "(==|!=|<=|>=|<|>)"
+				},
+				{
+					"name": "keyword.operator.logical.mio",
+					"match": "(&&|\\|\\||!)"
+				},
+				{
+					"name": "keyword.operator.bitwise.mio",
+					"match": "(&|\\||\\^|~|<<|>>)"
+				},
+				{
+					"name": "keyword.operator.assignment.mio",
+					"match": "="
+				},
+				{
+					"name": "keyword.operator.access.mio",
+					"match": "(::|->|\\.\\.\\.|(?<!\\.)\\.(?!\\.))"
+				}
+			]
+		},
+		"strings": {
+			"patterns": [
+				{
+					"name": "string.quoted.double.mio",
+					"begin": "\"",
+					"end": "\"",
+					"patterns": [
+						{
+							"name": "constant.character.escape.mio",
+							"match": "\\\\(n|t|r|\\\\|\\\"|0)"
+						}
+					]
+				},
+				{
+					"name": "string.quoted.single.mio",
+					"begin": "'",
+					"end": "'",
+					"patterns": [
+						{
+							"name": "constant.character.escape.mio",
+							"match": "\\\\(n|t|r|\\\\|'|0)"
+						}
+					]
+				}
+			]
+		},
+		"numbers": {
+			"patterns": [
+				{
+					"name": "constant.numeric.integer.mio",
+					"match": "\\b\\d+\\b"
+				},
+				{
+					"name": "constant.numeric.hex.mio",
+					"match": "\\b0[xX][0-9a-fA-F]+\\b"
+				},
+				{
+					"name": "constant.numeric.float.mio",
+					"match": "\\b\\d+\\.\\d+\\b"
+				}
+			]
+		},
+		"constants": {
+			"patterns": [
+				{
+					"name": "constant.language.boolean.mio",
+					"match": "\\b(true|false)\\b"
+				}
+			]
+		}
+	}
 }
