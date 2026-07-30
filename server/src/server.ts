@@ -23,12 +23,82 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Parser } from './parser';
 import { SymbolTable, SymbolInfo } from './symbols';
 import { AstNodeKind, TokenKind } from './ast';
+import * as fs from 'fs';
+import * as path from 'path';
+import { globSync } from 'glob';
 
 const connection = createConnection(ProposedFeatures.all);
 const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 
 let hasConfigurationCapability = false;
 let hasWorkspaceFolderCapability = false;
+
+// Global symbol table for headers
+const headerSymbols = new SymbolTable();
+let cachedIncludePaths: string[] = [];
+
+interface MioSettings {
+	includePaths: string[];
+}
+
+const defaultSettings: MioSettings = { includePaths: [] };
+let globalSettings: MioSettings = defaultSettings;
+
+const documentSettings: Map<string, Thenable<MioSettings>> = new Map();
+
+function getDocumentSettings(resource: string): Thenable<MioSettings> {
+	if (!hasConfigurationCapability) {
+		return Promise.resolve(globalSettings);
+	}
+	let result = documentSettings.get(resource);
+	if (!result) {
+		result = connection.workspace.getConfiguration({
+			scopeUri: resource,
+			section: 'mio',
+		});
+		documentSettings.set(resource, result);
+	}
+	return result;
+}
+
+function loadHeaderFiles(includePaths: string[], workspaceRoot?: string): void {
+	headerSymbols.symbols.clear();
+	headerSymbols.types.clear();
+
+	const resolvedPaths = includePaths.map(p => {
+		if (path.isAbsolute(p)) return p;
+		if (workspaceRoot) return path.join(workspaceRoot, p);
+		return p;
+	});
+
+	for (const searchPath of resolvedPaths) {
+		try {
+			if (!fs.existsSync(searchPath)) continue;
+			const files = globSync('**/*.mio', { cwd: searchPath });
+			for (const file of files) {
+				const filePath = path.join(searchPath, file);
+				try {
+					const content = fs.readFileSync(filePath, 'utf-8');
+					const parser = new Parser(content);
+					const ast = parser.parse();
+					headerSymbols.collectFromAst(ast);
+				} catch {
+					// skip unreadable files
+				}
+			}
+		} catch {
+			// skip invalid paths
+		}
+	}
+}
+
+async function getWorkspaceRoot(): Promise<string | undefined> {
+	if (hasWorkspaceFolderCapability) {
+		const folders = await connection.workspace.getWorkspaceFolders();
+		return folders?.[0]?.uri?.replace(/^file:\/\//, '').replace(/\//g, path.sep);
+	}
+	return undefined;
+}
 
 connection.onInitialize((params: InitializeParams) => {
 	const capabilities = params.capabilities;
@@ -72,7 +142,38 @@ connection.onInitialized(() => {
 			connection.console.log('Workspace folder change event received.');
 		});
 	}
+	// Load initial settings
+	updateConfiguration();
 });
+
+connection.onDidChangeConfiguration(change => {
+	if (hasConfigurationCapability) {
+		documentSettings.clear();
+	} else {
+		globalSettings = change.settings.mio || defaultSettings;
+	}
+	updateConfiguration();
+});
+
+connection.onDidCloseTextDocument(change => {
+	documentSettings.delete(change.textDocument.uri);
+});
+
+async function updateConfiguration(): Promise<void> {
+	const settings = await getDocumentSettings('/');
+	const workspaceRoot = await getWorkspaceRoot();
+	cachedIncludePaths = settings.includePaths || [];
+	if (cachedIncludePaths.length > 0) {
+		loadHeaderFiles(cachedIncludePaths, workspaceRoot);
+		connection.console.log(`Loaded header files from: ${cachedIncludePaths.join(', ')}`);
+	} else {
+		connection.console.log('No include paths configured.');
+	}
+	// Re-validate all open documents
+	for (const doc of documents.all()) {
+		validateTextDocument(doc);
+	}
+}
 
 // Keywords for completion
 const KEYWORDS: CompletionItem[] = [
@@ -422,6 +523,26 @@ connection.onCompletion(
 		// Default: keywords + types + symbols
 		const completions: CompletionItem[] = [...KEYWORDS, ...SNIPPETS, ...TYPES];
 
+		// Add symbols from header files
+		for (const sym of headerSymbols.getAllSymbols()) {
+			completions.push({
+				label: sym.name,
+				kind: getSymbolKind(sym),
+				detail: getSymbolDetail(sym),
+			});
+		}
+
+		// Add types from header files
+		for (const sym of headerSymbols.getAllTypes()) {
+			if (!completions.find(c => c.label === sym.name)) {
+				completions.push({
+					label: sym.name,
+					kind: getSymbolKind(sym),
+					detail: getSymbolDetail(sym),
+				});
+			}
+		}
+
 		// Add symbols from the current file
 		for (const sym of symbols.getAllSymbols()) {
 			completions.push({
@@ -509,7 +630,10 @@ connection.onHover(
 		}
 
 		// Check symbols
-		const sym = symbols.get(word) || symbols.getType(word);
+		let sym = symbols.get(word) || symbols.getType(word);
+		if (!sym) {
+			sym = headerSymbols.get(word) || headerSymbols.getType(word);
+		}
 		if (sym) {
 			const detail = getSymbolDetail(sym);
 			return {
@@ -547,13 +671,25 @@ connection.onDefinition(
 		}
 
 		const word = wordMatch[1];
-		const sym = symbols.get(word) || symbols.getType(word);
+		let sym = symbols.get(word) || symbols.getType(word);
 		if (sym) {
 			return {
 				uri: params.textDocument.uri,
 				range: {
 					start: { line: sym.line - 1, character: sym.col - 1 },
 					end: { line: sym.line - 1, character: sym.col + sym.name.length - 1 },
+				},
+			};
+		}
+
+		// Check header symbols
+		const headerSym = headerSymbols.get(word) || headerSymbols.getType(word);
+		if (headerSym) {
+			return {
+				uri: params.textDocument.uri,
+				range: {
+					start: { line: headerSym.line - 1, character: headerSym.col - 1 },
+					end: { line: headerSym.line - 1, character: headerSym.col + headerSym.name.length - 1 },
 				},
 			};
 		}

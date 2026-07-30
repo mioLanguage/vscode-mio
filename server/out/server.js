@@ -1,13 +1,109 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const node_1 = require("vscode-languageserver/node");
 const vscode_languageserver_textdocument_1 = require("vscode-languageserver-textdocument");
 const parser_1 = require("./parser");
 const symbols_1 = require("./symbols");
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
+const glob_1 = require("glob");
 const connection = (0, node_1.createConnection)(node_1.ProposedFeatures.all);
 const documents = new node_1.TextDocuments(vscode_languageserver_textdocument_1.TextDocument);
 let hasConfigurationCapability = false;
 let hasWorkspaceFolderCapability = false;
+// Global symbol table for headers
+const headerSymbols = new symbols_1.SymbolTable();
+let cachedIncludePaths = [];
+const defaultSettings = { includePaths: [] };
+let globalSettings = defaultSettings;
+const documentSettings = new Map();
+function getDocumentSettings(resource) {
+    if (!hasConfigurationCapability) {
+        return Promise.resolve(globalSettings);
+    }
+    let result = documentSettings.get(resource);
+    if (!result) {
+        result = connection.workspace.getConfiguration({
+            scopeUri: resource,
+            section: 'mio',
+        });
+        documentSettings.set(resource, result);
+    }
+    return result;
+}
+function loadHeaderFiles(includePaths, workspaceRoot) {
+    headerSymbols.symbols.clear();
+    headerSymbols.types.clear();
+    const resolvedPaths = includePaths.map(p => {
+        if (path.isAbsolute(p))
+            return p;
+        if (workspaceRoot)
+            return path.join(workspaceRoot, p);
+        return p;
+    });
+    for (const searchPath of resolvedPaths) {
+        try {
+            if (!fs.existsSync(searchPath))
+                continue;
+            const files = (0, glob_1.globSync)('**/*.mio', { cwd: searchPath });
+            for (const file of files) {
+                const filePath = path.join(searchPath, file);
+                try {
+                    const content = fs.readFileSync(filePath, 'utf-8');
+                    const parser = new parser_1.Parser(content);
+                    const ast = parser.parse();
+                    headerSymbols.collectFromAst(ast);
+                }
+                catch {
+                    // skip unreadable files
+                }
+            }
+        }
+        catch {
+            // skip invalid paths
+        }
+    }
+}
+async function getWorkspaceRoot() {
+    if (hasWorkspaceFolderCapability) {
+        const folders = await connection.workspace.getWorkspaceFolders();
+        return folders?.[0]?.uri?.replace(/^file:\/\//, '').replace(/\//g, path.sep);
+    }
+    return undefined;
+}
 connection.onInitialize((params) => {
     const capabilities = params.capabilities;
     hasConfigurationCapability = !!(capabilities.workspace && !!capabilities.workspace.configuration);
@@ -41,7 +137,37 @@ connection.onInitialized(() => {
             connection.console.log('Workspace folder change event received.');
         });
     }
+    // Load initial settings
+    updateConfiguration();
 });
+connection.onDidChangeConfiguration(change => {
+    if (hasConfigurationCapability) {
+        documentSettings.clear();
+    }
+    else {
+        globalSettings = change.settings.mio || defaultSettings;
+    }
+    updateConfiguration();
+});
+connection.onDidCloseTextDocument(change => {
+    documentSettings.delete(change.textDocument.uri);
+});
+async function updateConfiguration() {
+    const settings = await getDocumentSettings('/');
+    const workspaceRoot = await getWorkspaceRoot();
+    cachedIncludePaths = settings.includePaths || [];
+    if (cachedIncludePaths.length > 0) {
+        loadHeaderFiles(cachedIncludePaths, workspaceRoot);
+        connection.console.log(`Loaded header files from: ${cachedIncludePaths.join(', ')}`);
+    }
+    else {
+        connection.console.log('No include paths configured.');
+    }
+    // Re-validate all open documents
+    for (const doc of documents.all()) {
+        validateTextDocument(doc);
+    }
+}
 // Keywords for completion
 const KEYWORDS = [
     { label: 'import', kind: node_1.CompletionItemKind.Keyword, detail: '导入头文件' },
@@ -366,6 +492,24 @@ connection.onCompletion(async (textDocumentPosition) => {
     }
     // Default: keywords + types + symbols
     const completions = [...KEYWORDS, ...SNIPPETS, ...TYPES];
+    // Add symbols from header files
+    for (const sym of headerSymbols.getAllSymbols()) {
+        completions.push({
+            label: sym.name,
+            kind: getSymbolKind(sym),
+            detail: getSymbolDetail(sym),
+        });
+    }
+    // Add types from header files
+    for (const sym of headerSymbols.getAllTypes()) {
+        if (!completions.find(c => c.label === sym.name)) {
+            completions.push({
+                label: sym.name,
+                kind: getSymbolKind(sym),
+                detail: getSymbolDetail(sym),
+            });
+        }
+    }
     // Add symbols from the current file
     for (const sym of symbols.getAllSymbols()) {
         completions.push({
@@ -438,7 +582,10 @@ connection.onHover(async (params) => {
         };
     }
     // Check symbols
-    const sym = symbols.get(word) || symbols.getType(word);
+    let sym = symbols.get(word) || symbols.getType(word);
+    if (!sym) {
+        sym = headerSymbols.get(word) || headerSymbols.getType(word);
+    }
     if (sym) {
         const detail = getSymbolDetail(sym);
         return {
@@ -468,13 +615,24 @@ connection.onDefinition(async (params) => {
         return null;
     }
     const word = wordMatch[1];
-    const sym = symbols.get(word) || symbols.getType(word);
+    let sym = symbols.get(word) || symbols.getType(word);
     if (sym) {
         return {
             uri: params.textDocument.uri,
             range: {
                 start: { line: sym.line - 1, character: sym.col - 1 },
                 end: { line: sym.line - 1, character: sym.col + sym.name.length - 1 },
+            },
+        };
+    }
+    // Check header symbols
+    const headerSym = headerSymbols.get(word) || headerSymbols.getType(word);
+    if (headerSym) {
+        return {
+            uri: params.textDocument.uri,
+            range: {
+                start: { line: headerSym.line - 1, character: headerSym.col - 1 },
+                end: { line: headerSym.line - 1, character: headerSym.col + headerSym.name.length - 1 },
             },
         };
     }

@@ -46,7 +46,21 @@
     "snippets": [{
       "language": "mio",
       "path": "./snippets/mio.json"
-    }]
+    }],
+    "configuration": {
+      "type": "object",
+      "title": "Mio",
+      "properties": {
+        "mio.includePaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "头文件搜索路径列表，用于智能补全和符号解析"
+        }
+      }
+    }
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
