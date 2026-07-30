@@ -1,6 +1,6 @@
 {
 	"name": "mio-language-server",
-	"version": "0.0.4",
+	"version": "0.0.5",
 	"description": "Mio language server",
 	"main": "out/server.js",
 	"scripts": {
