@@ -19,79 +19,90 @@ export declare enum TokenKind {
     CONTINUE = 17,
     GOTO = 18,
     RETURN = 19,
-    STRUCT = 20,
-    ENUM = 21,
-    UNION = 22,
-    CLASS = 23,
-    NAMESPACE = 24,
-    PUBLIC = 25,
-    PRIVATE = 26,
-    PROTECTED = 27,
-    VIRTUAL = 28,
-    OVERRIDE = 29,
-    STATIC = 30,
-    OPERATOR = 31,
-    TRUE = 32,
-    FALSE = 33,
-    THIS = 34,
-    MACRO = 35,
-    AT_IF = 36,
-    AT_ELIF = 37,
-    AT_ELSE = 38,
-    AT_END = 39,
-    I8 = 40,
-    I16 = 41,
-    I32 = 42,
-    I64 = 43,
-    I128 = 44,
-    U8 = 45,
-    U16 = 46,
-    U32 = 47,
-    U64 = 48,
-    U128 = 49,
-    USIZE = 50,
-    ISIZE = 51,
-    F32 = 52,
-    F64 = 53,
-    BOOL = 54,
-    CHAR = 55,
-    VOID = 56,
-    PLUS = 57,
-    MINUS = 58,
-    STAR = 59,
-    SLASH = 60,
-    PERCENT = 61,
-    ASSIGN = 62,
-    EQ = 63,
-    NEQ = 64,
-    LT = 65,
-    GT = 66,
-    LTE = 67,
-    GTE = 68,
-    AND = 69,
-    OR = 70,
-    NOT = 71,
-    BIT_AND = 72,
-    BIT_OR = 73,
-    BIT_XOR = 74,
-    BIT_NOT = 75,
-    LSHIFT = 76,
-    RSHIFT = 77,
-    LPAREN = 78,
-    RPAREN = 79,
-    LBRACE = 80,
-    RBRACE = 81,
-    LBRACKET = 82,
-    RBRACKET = 83,
-    SEMICOLON = 84,
-    COLON = 85,
-    DOUBLE_COLON = 86,
-    COMMA = 87,
-    DOT = 88,
-    ARROW = 89,
-    VARARG = 90,
-    TEMPLATE = 91,
-    TYPENAME = 92
+    ENUM = 20,
+    UNION = 21,
+    CLASS = 22,
+    NAMESPACE = 23,
+    PUBLIC = 24,
+    PRIVATE = 25,
+    PROTECTED = 26,
+    VIRTUAL = 27,
+    OVERRIDE = 28,
+    STATIC = 29,
+    OPERATOR = 30,
+    TRUE = 31,
+    FALSE = 32,
+    THIS = 33,
+    MACRO = 34,
+    AT_IF = 35,
+    AT_ELIF = 36,
+    AT_ELSE = 37,
+    AT_END = 38,
+    I8 = 39,
+    I16 = 40,
+    I32 = 41,
+    I64 = 42,
+    I128 = 43,
+    U8 = 44,
+    U16 = 45,
+    U32 = 46,
+    U64 = 47,
+    U128 = 48,
+    USIZE = 49,
+    ISIZE = 50,
+    F32 = 51,
+    F64 = 52,
+    BOOL = 53,
+    CHAR = 54,
+    VOID = 55,
+    PLUS = 56,
+    MINUS = 57,
+    STAR = 58,
+    SLASH = 59,
+    PERCENT = 60,
+    ASSIGN = 61,
+    PLUS_ASSIGN = 62,
+    MINUS_ASSIGN = 63,
+    STAR_ASSIGN = 64,
+    SLASH_ASSIGN = 65,
+    PERCENT_ASSIGN = 66,
+    AND_ASSIGN = 67,
+    OR_ASSIGN = 68,
+    XOR_ASSIGN = 69,
+    LSHIFT_ASSIGN = 70,
+    RSHIFT_ASSIGN = 71,
+    EQ = 72,
+    NEQ = 73,
+    LT = 74,
+    GT = 75,
+    LTE = 76,
+    GTE = 77,
+    DOLLAR = 78,
+    AND = 79,
+    OR = 80,
+    NOT = 81,
+    BIT_AND = 82,
+    BIT_OR = 83,
+    BIT_XOR = 84,
+    BIT_NOT = 85,
+    LSHIFT = 86,
+    RSHIFT = 87,
+    LPAREN = 88,
+    RPAREN = 89,
+    LBRACE = 90,
+    RBRACE = 91,
+    LBRACKET = 92,
+    RBRACKET = 93,
+    SEMICOLON = 94,
+    COLON = 95,
+    DOUBLE_COLON = 96,
+    COMMA = 97,
+    DOT = 98,
+    ARROW = 99,
+    VARARG = 100,
+    TEMPLATE = 101,
+    TYPENAME = 102,
+    SIZEOF = 103
 }
 export declare class Token {
     kind: TokenKind;
@@ -112,11 +123,11 @@ export declare enum AstNodeKind {
     VAR_DECL = 2,
     CONST_DECL = 3,
     FUNC_DEF = 4,
-    STRUCT_DEF = 5,
-    ENUM_DEF = 6,
-    UNION_DEF = 7,
-    CLASS_DEF = 8,
-    NAMESPACE_DEF = 9,
+    ENUM_DEF = 5,
+    UNION_DEF = 6,
+    CLASS_DEF = 7,
+    NAMESPACE_DEF = 8,
+    NAMESPACE_IMPORT = 9,
     BLOCK = 10,
     IF_STMT = 11,
     WHILE_STMT = 12,
@@ -138,10 +149,12 @@ export declare enum AstNodeKind {
     STRING_LIT = 28,
     BOOL_LIT = 29,
     CHAR_LIT = 30,
-    CAST_EXPR = 31,
-    ASSIGN_EXPR = 32,
-    MACRO_DEF = 33,
-    TEMPLATE_DEF = 34
+    ARRAY_LIT = 31,
+    CAST_EXPR = 32,
+    ASSIGN_EXPR = 33,
+    MACRO_DEF = 34,
+    TEMPLATE_DEF = 35,
+    SIZEOF_EXPR = 36
 }
 export interface Param {
     name: string;
@@ -151,15 +164,22 @@ export interface Param {
 export interface Field {
     name: string;
     typeName: string;
+    init?: AstNode;
+    access?: string;
 }
 export interface Variant {
     name: string;
-    value?: AstNode;
+    init?: AstNode;
 }
 export interface TemplateParam {
     name: string;
     isType: boolean;
     typeName?: string;
+}
+export interface TemplateArg {
+    isType: boolean;
+    typeName?: string;
+    expr?: AstNode;
 }
 export declare class AstNode {
     kind: AstNodeKind;
@@ -169,6 +189,7 @@ export declare class AstNode {
     returnType?: string;
     decls: AstNode[];
     importPath?: string;
+    namespaceImportName?: string;
     varName?: string;
     varType?: string;
     initExpr?: AstNode;
@@ -179,16 +200,31 @@ export declare class AstNode {
     isStatic: boolean;
     isVirtual: boolean;
     isOverride: boolean;
-    structName?: string;
+    isPureVirtual: boolean;
+    isVariadic: boolean;
+    isOperator: boolean;
+    opName?: string;
+    access?: string;
+    initList?: {
+        name: string;
+        expr: AstNode;
+    }[];
+    className?: string;
     fields: Field[];
     methods: AstNode[];
+    constructors: AstNode[];
+    destructor?: AstNode;
+    nestedClasses: AstNode[];
     variants: Variant[];
     baseName?: string;
     baseAccess?: string;
+    classNameForFunc?: string;
     templateParams: TemplateParam[];
     templateBody?: AstNode;
     macroName?: string;
+    macroValue?: string;
     stmts: AstNode[];
+    isScope: boolean;
     condition?: AstNode;
     thenBlock?: AstNode;
     elifBlocks: {
@@ -206,16 +242,20 @@ export declare class AstNode {
     operand?: AstNode;
     callee?: AstNode;
     args: AstNode[];
+    templateArgs?: TemplateArg[];
     indexExpr?: AstNode;
     memberName?: string;
     arrow: boolean;
     identName?: string;
+    namespaceName?: string;
     intVal?: number;
     floatVal?: number;
     stringVal?: string;
     boolVal?: boolean;
     charVal?: string;
+    arrayElements: AstNode[];
     castType?: string;
+    sizeofTargetType?: string;
     constructor(kind: AstNodeKind, line: number, col: number);
 }
 //# sourceMappingURL=ast.d.ts.map

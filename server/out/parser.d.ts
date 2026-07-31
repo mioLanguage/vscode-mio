@@ -21,14 +21,12 @@ export declare class Parser {
     private parseTemplateParams;
     private parseTemplateParam;
     private parseTemplateBody;
-    private parseStruct;
-    private parseStructBody;
-    private parseConstructorRest;
-    private parseOperatorDef;
     private parseEnum;
     private parseUnion;
     private parseClass;
     private parseClassBody;
+    private parseConstructorRest;
+    private parseOperatorDef;
     private parseNamespace;
     private parseVarDecl;
     private parseConstDecl;

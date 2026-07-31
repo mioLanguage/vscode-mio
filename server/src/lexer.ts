@@ -7,7 +7,7 @@ const KEYWORDS: Record<string, TokenKind> = {
 	'while': TokenKind.WHILE, 'for': TokenKind.FOR,
 	'break': TokenKind.BREAK, 'continue': TokenKind.CONTINUE,
 	'goto': TokenKind.GOTO, 'return': TokenKind.RETURN,
-	'struct': TokenKind.STRUCT, 'enum': TokenKind.ENUM,
+	'enum': TokenKind.ENUM,
 	'union': TokenKind.UNION, 'class': TokenKind.CLASS,
 	'namespace': TokenKind.NAMESPACE,
 	'public': TokenKind.PUBLIC, 'private': TokenKind.PRIVATE,

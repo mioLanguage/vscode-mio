@@ -74,9 +74,6 @@ export class SymbolTable {
 			case AstNodeKind.CONST_DECL:
 				this.collectConstant(decl, currentNamespace);
 				break;
-			case AstNodeKind.STRUCT_DEF:
-				this.collectStruct(decl, currentNamespace);
-				break;
 			case AstNodeKind.ENUM_DEF:
 				this.collectEnum(decl, currentNamespace);
 				break;
@@ -88,6 +85,9 @@ export class SymbolTable {
 				break;
 			case AstNodeKind.NAMESPACE_DEF:
 				this.collectNamespace(decl);
+				break;
+			case AstNodeKind.NAMESPACE_IMPORT:
+				// Namespace imports are not collected for completion
 				break;
 			case AstNodeKind.TEMPLATE_DEF:
 				this.collectTemplate(decl, currentNamespace);
@@ -146,50 +146,36 @@ export class SymbolTable {
 		});
 	}
 
-	private collectStruct(decl: AstNode, currentNamespace?: string): void {
-		if (!decl.structName) { return; }
-		const info: SymbolInfo = {
-			name: decl.structName,
-			kind: 'struct',
-			fields: decl.fields,
-			methods: this.collectMethods(decl.methods),
-			line: decl.line,
-			col: decl.col,
-		};
-		this.addType(decl.structName, info);
-		this.add(decl.structName, info);
-	}
-
 	private collectEnum(decl: AstNode, currentNamespace?: string): void {
-		if (!decl.structName) { return; }
+		if (!decl.className) { return; }
 		const info: SymbolInfo = {
-			name: decl.structName,
+			name: decl.className,
 			kind: 'enum',
 			variants: decl.variants,
 			line: decl.line,
 			col: decl.col,
 		};
-		this.addType(decl.structName, info);
-		this.add(decl.structName, info);
+		this.addType(decl.className, info);
+		this.add(decl.className, info);
 	}
 
 	private collectUnion(decl: AstNode, currentNamespace?: string): void {
-		if (!decl.structName) { return; }
+		if (!decl.className) { return; }
 		const info: SymbolInfo = {
-			name: decl.structName,
+			name: decl.className,
 			kind: 'union',
 			fields: decl.fields,
 			line: decl.line,
 			col: decl.col,
 		};
-		this.addType(decl.structName, info);
-		this.add(decl.structName, info);
+		this.addType(decl.className, info);
+		this.add(decl.className, info);
 	}
 
 	private collectClass(decl: AstNode, currentNamespace?: string): void {
-		if (!decl.structName) { return; }
+		if (!decl.className) { return; }
 		const info: SymbolInfo = {
-			name: decl.structName,
+			name: decl.className,
 			kind: 'class',
 			fields: decl.fields,
 			methods: this.collectMethods(decl.methods),
@@ -197,17 +183,17 @@ export class SymbolTable {
 			line: decl.line,
 			col: decl.col,
 		};
-		this.addType(decl.structName, info);
-		this.add(decl.structName, info);
+		this.addType(decl.className, info);
+		this.add(decl.className, info);
 	}
 
 	private collectNamespace(decl: AstNode): void {
-		if (!decl.structName) { return; }
+		if (!decl.className) { return; }
 		const ns = new SymbolTable(this);
-		ns.collectFromAst(decl, decl.structName);
-		this.namespaces.set(decl.structName, ns);
-		this.add(decl.structName, {
-			name: decl.structName,
+		ns.collectFromAst(decl, decl.className);
+		this.namespaces.set(decl.className, ns);
+		this.add(decl.className, {
+			name: decl.className,
 			kind: 'namespace',
 			line: decl.line,
 			col: decl.col,

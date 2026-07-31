@@ -4,7 +4,7 @@ export enum TokenKind {
 	IMPORT, EXTERN, VAR, CONST,
 	IF, ELSE, ELIF, WHILE, FOR,
 	BREAK, CONTINUE, GOTO, RETURN,
-	STRUCT, ENUM, UNION, CLASS, NAMESPACE,
+	ENUM, UNION, CLASS, NAMESPACE,
 	PUBLIC, PRIVATE, PROTECTED,
 	VIRTUAL, OVERRIDE, STATIC, OPERATOR,
 	TRUE, FALSE, THIS, MACRO,
@@ -13,13 +13,16 @@ export enum TokenKind {
 	U8, U16, U32, U64, U128,
 	USIZE, ISIZE, F32, F64, BOOL, CHAR, VOID,
 	PLUS, MINUS, STAR, SLASH, PERCENT,
-	ASSIGN, EQ, NEQ, LT, GT, LTE, GTE,
+	ASSIGN, PLUS_ASSIGN, MINUS_ASSIGN, STAR_ASSIGN, SLASH_ASSIGN, PERCENT_ASSIGN,
+	AND_ASSIGN, OR_ASSIGN, XOR_ASSIGN, LSHIFT_ASSIGN, RSHIFT_ASSIGN,
+	EQ, NEQ, LT, GT, LTE, GTE,
+	DOLLAR,
 	AND, OR, NOT,
 	BIT_AND, BIT_OR, BIT_XOR, BIT_NOT,
 	LSHIFT, RSHIFT,
 	LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
 	SEMICOLON, COLON, DOUBLE_COLON, COMMA, DOT, ARROW, VARARG,
-	TEMPLATE, TYPENAME,
+	TEMPLATE, TYPENAME, SIZEOF,
 }
 
 export class Token {
@@ -64,13 +67,13 @@ export function tokenName(kind: TokenKind): string {
 
 export enum AstNodeKind {
 	PROGRAM, IMPORT, VAR_DECL, CONST_DECL, FUNC_DEF,
-	STRUCT_DEF, ENUM_DEF, UNION_DEF, CLASS_DEF, NAMESPACE_DEF,
+	ENUM_DEF, UNION_DEF, CLASS_DEF, NAMESPACE_DEF, NAMESPACE_IMPORT,
 	BLOCK, IF_STMT, WHILE_STMT, FOR_STMT,
 	BREAK_STMT, CONTINUE_STMT, GOTO_STMT, LABEL_STMT, RETURN_STMT,
 	EXPR_STMT, BINARY_EXPR, UNARY_EXPR, CALL_EXPR,
 	INDEX_EXPR, MEMBER_EXPR, IDENT_EXPR,
-	INT_LIT, FLOAT_LIT, STRING_LIT, BOOL_LIT, CHAR_LIT,
-	CAST_EXPR, ASSIGN_EXPR, MACRO_DEF, TEMPLATE_DEF,
+	INT_LIT, FLOAT_LIT, STRING_LIT, BOOL_LIT, CHAR_LIT, ARRAY_LIT,
+	CAST_EXPR, ASSIGN_EXPR, MACRO_DEF, TEMPLATE_DEF, SIZEOF_EXPR,
 }
 
 export interface Param {
@@ -82,17 +85,25 @@ export interface Param {
 export interface Field {
 	name: string;
 	typeName: string;
+	init?: AstNode;
+	access?: string;
 }
 
 export interface Variant {
 	name: string;
-	value?: AstNode;
+	init?: AstNode;
 }
 
 export interface TemplateParam {
 	name: string;
 	isType: boolean;
 	typeName?: string;
+}
+
+export interface TemplateArg {
+	isType: boolean;
+	typeName?: string;
+	expr?: AstNode;
 }
 
 export class AstNode {
@@ -109,6 +120,9 @@ export class AstNode {
 	// Import
 	importPath?: string;
 
+	// Namespace import
+	namespaceImportName?: string;
+
 	// Var/Const
 	varName?: string;
 	varType?: string;
@@ -122,14 +136,24 @@ export class AstNode {
 	isStatic: boolean = false;
 	isVirtual: boolean = false;
 	isOverride: boolean = false;
+	isPureVirtual: boolean = false;
+	isVariadic: boolean = false;
+	isOperator: boolean = false;
+	opName?: string;
+	access?: string;
+	initList?: { name: string; expr: AstNode }[];
 
-	// Struct/Class/Enum/Union/Namespace
-	structName?: string;
+	// Class/Enum/Union/Namespace
+	className?: string;
 	fields: Field[] = [];
 	methods: AstNode[] = [];
+	constructors: AstNode[] = [];
+	destructor?: AstNode;
+	nestedClasses: AstNode[] = [];
 	variants: Variant[] = [];
 	baseName?: string;
 	baseAccess?: string;
+	classNameForFunc?: string;
 
 	// Template
 	templateParams: TemplateParam[] = [];
@@ -137,9 +161,11 @@ export class AstNode {
 
 	// Macro
 	macroName?: string;
+	macroValue?: string;
 
 	// Block
 	stmts: AstNode[] = [];
+	isScope: boolean = false;
 
 	// If/While/For
 	condition?: AstNode;
@@ -166,6 +192,7 @@ export class AstNode {
 	// Call
 	callee?: AstNode;
 	args: AstNode[] = [];
+	templateArgs?: TemplateArg[];
 
 	// Index
 	indexExpr?: AstNode;
@@ -176,6 +203,7 @@ export class AstNode {
 
 	// Ident
 	identName?: string;
+	namespaceName?: string;
 
 	// Literals
 	intVal?: number;
@@ -184,8 +212,14 @@ export class AstNode {
 	boolVal?: boolean;
 	charVal?: string;
 
+	// Array literal
+	arrayElements: AstNode[] = [];
+
 	// Cast
 	castType?: string;
+
+	// Sizeof
+	sizeofTargetType?: string;
 
 	constructor(kind: AstNodeKind, line: number, col: number) {
 		this.kind = kind;

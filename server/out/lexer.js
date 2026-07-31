@@ -9,7 +9,7 @@ const KEYWORDS = {
     'while': ast_1.TokenKind.WHILE, 'for': ast_1.TokenKind.FOR,
     'break': ast_1.TokenKind.BREAK, 'continue': ast_1.TokenKind.CONTINUE,
     'goto': ast_1.TokenKind.GOTO, 'return': ast_1.TokenKind.RETURN,
-    'struct': ast_1.TokenKind.STRUCT, 'enum': ast_1.TokenKind.ENUM,
+    'enum': ast_1.TokenKind.ENUM,
     'union': ast_1.TokenKind.UNION, 'class': ast_1.TokenKind.CLASS,
     'namespace': ast_1.TokenKind.NAMESPACE,
     'public': ast_1.TokenKind.PUBLIC, 'private': ast_1.TokenKind.PRIVATE,

@@ -30,7 +30,6 @@ export declare class SymbolTable {
     private collectFunction;
     private collectVariable;
     private collectConstant;
-    private collectStruct;
     private collectEnum;
     private collectUnion;
     private collectClass;

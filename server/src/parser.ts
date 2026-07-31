@@ -71,7 +71,6 @@ export class Parser {
 			case TokenKind.EXTERN: return this.parseExtern();
 			case TokenKind.MACRO: return this.parseMacro();
 			case TokenKind.TEMPLATE: return this.parseTemplate();
-			case TokenKind.STRUCT: return this.parseStruct();
 			case TokenKind.ENUM: return this.parseEnum();
 			case TokenKind.UNION: return this.parseUnion();
 			case TokenKind.CLASS: return this.parseClass();
@@ -236,134 +235,6 @@ export class Parser {
 		}
 	}
 
-	private parseStruct(): AstNode {
-		const line = this.cur.line;
-		const col = this.cur.col;
-		this.advance(); // skip struct
-
-		const node = new AstNode(AstNodeKind.STRUCT_DEF, line, col);
-		if (this.check(TokenKind.IDENT)) {
-			node.structName = this.cur.lexeme;
-			this.advance();
-		}
-
-		this.expect(TokenKind.LBRACE);
-		this.parseStructBody(node);
-		this.expect(TokenKind.RBRACE);
-		return node;
-	}
-
-	private parseStructBody(node: AstNode): void {
-		while (!this.check(TokenKind.RBRACE) && !this.check(TokenKind.EOF)) {
-			if (this.check(TokenKind.STATIC)) {
-				this.advance();
-				const func = this.parseFuncDef(this.cur.line, this.cur.col);
-				if (func) {
-					func.isStatic = true;
-					node.methods.push(func);
-				}
-			} else if (this.check(TokenKind.IDENT)) {
-				const name = this.cur.lexeme;
-				const line = this.cur.line;
-				const col = this.cur.col;
-				this.advance();
-
-				if (this.check(TokenKind.COLON)) {
-					// Field: name: type;
-					this.advance();
-					const typeName = this.parseTypeName();
-					node.fields.push({ name, typeName });
-					this.match(TokenKind.SEMICOLON);
-				} else if (this.check(TokenKind.LPAREN)) {
-					// Constructor or method
-					if (name === node.structName) {
-						const funcNode = this.parseConstructorRest(name, line, col);
-						if (funcNode) { node.methods.push(funcNode); }
-					} else {
-						const funcNode = this.parseFuncRestWithName(name, line, col);
-						if (funcNode) { node.methods.push(funcNode); }
-					}
-				} else if (this.check(TokenKind.IDENT) || this.isTypeToken(this.cur.kind)) {
-					// Field with type: name type;
-					const typeName = this.parseTypeName();
-					node.fields.push({ name, typeName });
-					this.match(TokenKind.SEMICOLON);
-				} else {
-					this.match(TokenKind.SEMICOLON);
-				}
-			} else if (this.isTypeToken(this.cur.kind)) {
-				// Method with return type
-				const func = this.parseFuncDef(this.cur.line, this.cur.col);
-				if (func) { node.methods.push(func); }
-			} else if (this.check(TokenKind.OPERATOR)) {
-				const func = this.parseOperatorDef(this.cur.line, this.cur.col);
-				if (func) { node.methods.push(func); }
-			} else {
-				this.advance();
-			}
-		}
-	}
-
-	private parseConstructorRest(name: string, line: number, col: number): AstNode {
-		const node = new AstNode(AstNodeKind.FUNC_DEF, line, col);
-		node.funcName = name;
-		node.returnType = name;
-
-		this.expect(TokenKind.LPAREN);
-		if (!this.check(TokenKind.RPAREN)) {
-			node.params = this.parseParams();
-		}
-		this.expect(TokenKind.RPAREN);
-
-		// Member initializer list: : field1(val1), field2(val2)
-		if (this.check(TokenKind.COLON)) {
-			this.advance();
-			while (!this.check(TokenKind.LBRACE) && !this.check(TokenKind.EOF)) {
-				if (this.check(TokenKind.IDENT)) {
-					this.advance();
-					if (this.check(TokenKind.LPAREN)) {
-						this.advance();
-						let depth = 1;
-						while (depth > 0 && !this.check(TokenKind.EOF)) {
-							if (this.check(TokenKind.LPAREN)) { depth++; }
-							if (this.check(TokenKind.RPAREN)) { depth--; }
-							if (depth > 0) { this.advance(); }
-						}
-						this.advance(); // skip )
-					}
-				}
-				if (this.check(TokenKind.COMMA)) { this.advance(); }
-				else { break; }
-			}
-		}
-
-		node.body = this.parseBlock();
-		return node;
-	}
-
-	private parseOperatorDef(line: number, col: number): AstNode {
-		const node = new AstNode(AstNodeKind.FUNC_DEF, line, col);
-		this.advance(); // skip operator
-		let op = '';
-		if (this.check(TokenKind.PLUS)) { op = '+'; this.advance(); }
-		else if (this.check(TokenKind.MINUS)) { op = '-'; this.advance(); }
-		else if (this.check(TokenKind.STAR)) { op = '*'; this.advance(); }
-		else if (this.check(TokenKind.SLASH)) { op = '/'; this.advance(); }
-		else if (this.check(TokenKind.PERCENT)) { op = '%'; this.advance(); }
-		else if (this.check(TokenKind.EQ)) { op = '=='; this.advance(); }
-		else if (this.check(TokenKind.LT)) { op = '<'; this.advance(); }
-		else if (this.check(TokenKind.GT)) { op = '>'; this.advance(); }
-		node.funcName = 'operator' + op;
-
-		this.expect(TokenKind.LPAREN);
-		if (!this.check(TokenKind.RPAREN)) {
-			node.params = this.parseParams();
-		}
-		this.expect(TokenKind.RPAREN);
-		node.body = this.parseBlock();
-		return node;
-	}
-
 	private parseEnum(): AstNode {
 		const line = this.cur.line;
 		const col = this.cur.col;
@@ -371,7 +242,7 @@ export class Parser {
 
 		const node = new AstNode(AstNodeKind.ENUM_DEF, line, col);
 		if (this.check(TokenKind.IDENT)) {
-			node.structName = this.cur.lexeme;
+			node.className = this.cur.lexeme;
 			this.advance();
 		}
 
@@ -385,7 +256,7 @@ export class Parser {
 				const variant: Variant = { name: varName };
 				if (this.check(TokenKind.ASSIGN)) {
 					this.advance();
-					variant.value = this.parsePrimary();
+					variant.init = this.parsePrimary();
 				}
 				node.variants.push(variant);
 			}
@@ -403,7 +274,7 @@ export class Parser {
 
 		const node = new AstNode(AstNodeKind.UNION_DEF, line, col);
 		if (this.check(TokenKind.IDENT)) {
-			node.structName = this.cur.lexeme;
+			node.className = this.cur.lexeme;
 			this.advance();
 		}
 
@@ -431,7 +302,7 @@ export class Parser {
 
 		const node = new AstNode(AstNodeKind.CLASS_DEF, line, col);
 		if (this.check(TokenKind.IDENT)) {
-			node.structName = this.cur.lexeme;
+			node.className = this.cur.lexeme;
 			this.advance();
 		}
 
@@ -496,7 +367,7 @@ export class Parser {
 					node.fields.push({ name, typeName });
 					this.match(TokenKind.SEMICOLON);
 				} else if (this.check(TokenKind.LPAREN)) {
-					if (name === node.structName) {
+					if (name === node.className) {
 						const funcNode = this.parseConstructorRest(name, line, col);
 						if (funcNode) { node.methods.push(funcNode); }
 					} else if (name.startsWith('~')) {
@@ -526,6 +397,65 @@ export class Parser {
 		}
 	}
 
+	private parseConstructorRest(name: string, line: number, col: number): AstNode {
+		const node = new AstNode(AstNodeKind.FUNC_DEF, line, col);
+		node.funcName = name;
+		node.returnType = name;
+
+		this.expect(TokenKind.LPAREN);
+		if (!this.check(TokenKind.RPAREN)) {
+			node.params = this.parseParams();
+		}
+		this.expect(TokenKind.RPAREN);
+
+		if (this.check(TokenKind.COLON)) {
+			this.advance();
+			while (!this.check(TokenKind.LBRACE) && !this.check(TokenKind.EOF)) {
+				if (this.check(TokenKind.IDENT)) {
+					this.advance();
+					if (this.check(TokenKind.LPAREN)) {
+						this.advance();
+						let depth = 1;
+						while (depth > 0 && !this.check(TokenKind.EOF)) {
+							if (this.check(TokenKind.LPAREN)) { depth++; }
+							if (this.check(TokenKind.RPAREN)) { depth--; }
+							if (depth > 0) { this.advance(); }
+						}
+						this.advance();
+					}
+				}
+				if (this.check(TokenKind.COMMA)) { this.advance(); }
+				else { break; }
+			}
+		}
+
+		node.body = this.parseBlock();
+		return node;
+	}
+
+	private parseOperatorDef(line: number, col: number): AstNode {
+		const node = new AstNode(AstNodeKind.FUNC_DEF, line, col);
+		this.advance();
+		let op = '';
+		if (this.check(TokenKind.PLUS)) { op = '+'; this.advance(); }
+		else if (this.check(TokenKind.MINUS)) { op = '-'; this.advance(); }
+		else if (this.check(TokenKind.STAR)) { op = '*'; this.advance(); }
+		else if (this.check(TokenKind.SLASH)) { op = '/'; this.advance(); }
+		else if (this.check(TokenKind.PERCENT)) { op = '%'; this.advance(); }
+		else if (this.check(TokenKind.EQ)) { op = '=='; this.advance(); }
+		else if (this.check(TokenKind.LT)) { op = '<'; this.advance(); }
+		else if (this.check(TokenKind.GT)) { op = '>'; this.advance(); }
+		node.funcName = 'operator' + op;
+
+		this.expect(TokenKind.LPAREN);
+		if (!this.check(TokenKind.RPAREN)) {
+			node.params = this.parseParams();
+		}
+		this.expect(TokenKind.RPAREN);
+		node.body = this.parseBlock();
+		return node;
+	}
+
 	private parseNamespace(): AstNode {
 		const line = this.cur.line;
 		const col = this.cur.col;
@@ -533,7 +463,7 @@ export class Parser {
 
 		const node = new AstNode(AstNodeKind.NAMESPACE_DEF, line, col);
 		if (this.check(TokenKind.IDENT)) {
-			node.structName = this.cur.lexeme;
+			node.className = this.cur.lexeme;
 			this.advance();
 		}
 

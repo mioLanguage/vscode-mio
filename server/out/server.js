@@ -184,7 +184,6 @@ const KEYWORDS = [
     { label: 'continue', kind: node_1.CompletionItemKind.Keyword, detail: '继续下一次循环' },
     { label: 'goto', kind: node_1.CompletionItemKind.Keyword, detail: '跳转到标签' },
     { label: 'return', kind: node_1.CompletionItemKind.Keyword, detail: '返回' },
-    { label: 'struct', kind: node_1.CompletionItemKind.Keyword, detail: '定义结构体' },
     { label: 'enum', kind: node_1.CompletionItemKind.Keyword, detail: '定义枚举' },
     { label: 'union', kind: node_1.CompletionItemKind.Keyword, detail: '定义联合体' },
     { label: 'class', kind: node_1.CompletionItemKind.Keyword, detail: '定义类' },
@@ -260,13 +259,6 @@ const SNIPPETS = [
         insertTextFormat: 2,
     },
     {
-        label: 'struct',
-        kind: node_1.CompletionItemKind.Snippet,
-        detail: '结构体定义',
-        insertText: 'struct ${1:Name} {\n\t${2:field}: ${3:type};\n\n\t${1:Name}(${4:params}) {\n\t\t${5:// body}\n\t}\n}',
-        insertTextFormat: 2,
-    },
-    {
         label: 'class',
         kind: node_1.CompletionItemKind.Snippet,
         detail: '类定义',
@@ -325,8 +317,6 @@ function getSymbolKind(sym) {
             return node_1.CompletionItemKind.Variable;
         case 'constant':
             return node_1.CompletionItemKind.Constant;
-        case 'struct':
-            return node_1.CompletionItemKind.Struct;
         case 'class':
             return node_1.CompletionItemKind.Class;
         case 'enum':
@@ -351,8 +341,6 @@ function getSymbolDetail(sym) {
         case 'variable':
         case 'constant':
             return `${sym.kind} ${sym.name}: ${sym.typeName || '?'}`;
-        case 'struct':
-            return `struct ${sym.name}`;
         case 'class':
             return `class ${sym.name}`;
         case 'enum':
@@ -409,6 +397,56 @@ connection.onCompletion(async (textDocumentPosition) => {
         start: { line: position.line, character: 0 },
         end: { line: position.line, character: position.character },
     });
+    // Check if we're typing an import path: import "xxx" 或 import "xxx",yyy
+    const importMatch = line.match(/^import\s+("?)([\w./]*)"?/);
+    if (importMatch) {
+        const quote = importMatch[1];
+        const currentPath = importMatch[2];
+        const completions = [];
+        // Scan include paths for .mio files
+        const workspaceRoot = await getWorkspaceRoot();
+        const searchDirs = [];
+        // Add configured include paths
+        if (cachedIncludePaths.length > 0) {
+            for (const p of cachedIncludePaths) {
+                const resolved = path.isAbsolute(p) ? p : (workspaceRoot ? path.join(workspaceRoot, p) : p);
+                if (fs.existsSync(resolved)) {
+                    searchDirs.push(resolved);
+                }
+            }
+        }
+        // Add common include directories
+        if (workspaceRoot) {
+            const commonDirs = ['include', 'lib', 'src'];
+            for (const dir of commonDirs) {
+                const fullDir = path.join(workspaceRoot, dir);
+                if (fs.existsSync(fullDir)) {
+                    searchDirs.push(fullDir);
+                }
+            }
+        }
+        const seen = new Set();
+        for (const searchDir of searchDirs) {
+            try {
+                const files = (0, glob_1.globSync)('**/*.mio', { cwd: searchDir });
+                for (const file of files) {
+                    const name = file.replace(/\.mio$/, '').replace(/\\/g, '/');
+                    if (!seen.has(name)) {
+                        seen.add(name);
+                        completions.push({
+                            label: quote ? name : `"${name}"`,
+                            kind: node_1.CompletionItemKind.File,
+                            detail: `import "${name}"`,
+                        });
+                    }
+                }
+            }
+            catch {
+                // skip
+            }
+        }
+        return completions;
+    }
     // Check if we're after a . or -> for member completion
     const memberMatch = line.match(/(\w+)\s*(\.|->)\s*$/);
     if (memberMatch) {

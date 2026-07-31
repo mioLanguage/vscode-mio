@@ -51,9 +51,6 @@ class SymbolTable {
             case ast_1.AstNodeKind.CONST_DECL:
                 this.collectConstant(decl, currentNamespace);
                 break;
-            case ast_1.AstNodeKind.STRUCT_DEF:
-                this.collectStruct(decl, currentNamespace);
-                break;
             case ast_1.AstNodeKind.ENUM_DEF:
                 this.collectEnum(decl, currentNamespace);
                 break;
@@ -65,6 +62,9 @@ class SymbolTable {
                 break;
             case ast_1.AstNodeKind.NAMESPACE_DEF:
                 this.collectNamespace(decl);
+                break;
+            case ast_1.AstNodeKind.NAMESPACE_IMPORT:
+                // Namespace imports are not collected for completion
                 break;
             case ast_1.AstNodeKind.TEMPLATE_DEF:
                 this.collectTemplate(decl, currentNamespace);
@@ -125,55 +125,40 @@ class SymbolTable {
             col: decl.col,
         });
     }
-    collectStruct(decl, currentNamespace) {
-        if (!decl.structName) {
-            return;
-        }
-        const info = {
-            name: decl.structName,
-            kind: 'struct',
-            fields: decl.fields,
-            methods: this.collectMethods(decl.methods),
-            line: decl.line,
-            col: decl.col,
-        };
-        this.addType(decl.structName, info);
-        this.add(decl.structName, info);
-    }
     collectEnum(decl, currentNamespace) {
-        if (!decl.structName) {
+        if (!decl.className) {
             return;
         }
         const info = {
-            name: decl.structName,
+            name: decl.className,
             kind: 'enum',
             variants: decl.variants,
             line: decl.line,
             col: decl.col,
         };
-        this.addType(decl.structName, info);
-        this.add(decl.structName, info);
+        this.addType(decl.className, info);
+        this.add(decl.className, info);
     }
     collectUnion(decl, currentNamespace) {
-        if (!decl.structName) {
+        if (!decl.className) {
             return;
         }
         const info = {
-            name: decl.structName,
+            name: decl.className,
             kind: 'union',
             fields: decl.fields,
             line: decl.line,
             col: decl.col,
         };
-        this.addType(decl.structName, info);
-        this.add(decl.structName, info);
+        this.addType(decl.className, info);
+        this.add(decl.className, info);
     }
     collectClass(decl, currentNamespace) {
-        if (!decl.structName) {
+        if (!decl.className) {
             return;
         }
         const info = {
-            name: decl.structName,
+            name: decl.className,
             kind: 'class',
             fields: decl.fields,
             methods: this.collectMethods(decl.methods),
@@ -181,18 +166,18 @@ class SymbolTable {
             line: decl.line,
             col: decl.col,
         };
-        this.addType(decl.structName, info);
-        this.add(decl.structName, info);
+        this.addType(decl.className, info);
+        this.add(decl.className, info);
     }
     collectNamespace(decl) {
-        if (!decl.structName) {
+        if (!decl.className) {
             return;
         }
         const ns = new SymbolTable(this);
-        ns.collectFromAst(decl, decl.structName);
-        this.namespaces.set(decl.structName, ns);
-        this.add(decl.structName, {
-            name: decl.structName,
+        ns.collectFromAst(decl, decl.className);
+        this.namespaces.set(decl.className, ns);
+        this.add(decl.className, {
+            name: decl.className,
             kind: 'namespace',
             line: decl.line,
             col: decl.col,
