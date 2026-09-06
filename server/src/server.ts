@@ -3,6 +3,7 @@ import {
 	TextDocuments,
 	Diagnostic,
 	DiagnosticSeverity,
+	DiagnosticTag,
 	ProposedFeatures,
 	InitializeParams,
 	DidChangeConfigurationNotification,
@@ -197,6 +198,7 @@ const KEYWORDS: CompletionItem[] = [
 	{ label: 'namespace', kind: CompletionItemKind.Keyword, detail: '定义命名空间' },
 	{ label: 'template', kind: CompletionItemKind.Keyword, detail: '定义模板' },
 	{ label: 'typename', kind: CompletionItemKind.Keyword, detail: '模板类型参数' },
+	{ label: 'sizeof', kind: CompletionItemKind.Keyword, detail: '获取类型大小' },
 	{ label: 'public', kind: CompletionItemKind.Keyword, detail: '公开访问' },
 	{ label: 'private', kind: CompletionItemKind.Keyword, detail: '私有访问' },
 	{ label: 'protected', kind: CompletionItemKind.Keyword, detail: '受保护访问' },
@@ -292,7 +294,14 @@ const SNIPPETS: CompletionItem[] = [
 		label: 'template',
 		kind: CompletionItemKind.Snippet,
 		detail: '模板函数',
-		insertText: 'template<${1:T}:typename>\n${2:T} ${3:func}(${4:a}: ${2:T}) {\n\t${5:// body}\n}',
+		insertText: 'template$${1:T}:typename$$\n${2:T} ${3:func}(${4:a}: ${2:T}) {\n\t${5:// body}\n}',
+		insertTextFormat: 2,
+	},
+	{
+		label: 'sizeof',
+		kind: CompletionItemKind.Snippet,
+		detail: '获取类型大小',
+		insertText: 'sizeof(${1:type})',
 		insertTextFormat: 2,
 	},
 	{
@@ -311,12 +320,12 @@ const SNIPPETS: CompletionItem[] = [
 	},
 ];
 
-function parseDocument(text: string): { symbols: SymbolTable; errors: string[] } {
+function parseDocument(text: string): { symbols: SymbolTable; errors: string[]; skippedRanges: { startLine: number; startCol: number; endLine: number; endCol: number }[] } {
 	const parser = new Parser(text);
 	const ast = parser.parse();
 	const symbols = new SymbolTable();
 	symbols.collectFromAst(ast);
-	return { symbols, errors: parser.getErrors() };
+	return { symbols, errors: parser.getErrors(), skippedRanges: parser.getSkippedRanges() };
 }
 
 function getSymbolKind(sym: SymbolInfo): CompletionItemKind {
@@ -374,7 +383,7 @@ documents.onDidChangeContent(change => {
 
 async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 	const text = textDocument.getText();
-	const { errors } = parseDocument(text);
+	const { errors, skippedRanges } = parseDocument(text);
 
 	const diagnostics: Diagnostic[] = [];
 	for (const err of errors) {
@@ -394,6 +403,19 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 				source: 'mio',
 			});
 		}
+	}
+
+	for (const range of skippedRanges) {
+		diagnostics.push({
+			severity: DiagnosticSeverity.Hint,
+			range: {
+				start: { line: range.startLine - 1, character: range.startCol - 1 },
+				end: { line: range.endLine - 1, character: range.endCol - 1 },
+			},
+			message: 'Skipped by conditional compilation',
+			source: 'mio',
+			tags: [DiagnosticTag.Unnecessary],
+		});
 	}
 
 	connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
@@ -661,6 +683,7 @@ connection.onHover(
 			'bool': '布尔类型 (true / false)',
 			'char': '单个字符',
 			'void': '空类型（无返回值）',
+			'sizeof': '获取类型或变量的大小（字节数）',
 		};
 
 		if (typeItems[word]) {

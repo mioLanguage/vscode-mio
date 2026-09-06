@@ -5,7 +5,8 @@ const ast_1 = require("./ast");
 const KEYWORDS = {
     'import': ast_1.TokenKind.IMPORT, 'extern': ast_1.TokenKind.EXTERN,
     'var': ast_1.TokenKind.VAR, 'const': ast_1.TokenKind.CONST,
-    'if': ast_1.TokenKind.IF, 'else': ast_1.TokenKind.ELSE, 'elif': ast_1.TokenKind.ELIF,
+    'macro': ast_1.TokenKind.IDENT,
+    'if': ast_1.TokenKind.IF, 'else': ast_1.TokenKind.ELSE,
     'while': ast_1.TokenKind.WHILE, 'for': ast_1.TokenKind.FOR,
     'break': ast_1.TokenKind.BREAK, 'continue': ast_1.TokenKind.CONTINUE,
     'goto': ast_1.TokenKind.GOTO, 'return': ast_1.TokenKind.RETURN,
@@ -17,8 +18,9 @@ const KEYWORDS = {
     'virtual': ast_1.TokenKind.VIRTUAL, 'override': ast_1.TokenKind.OVERRIDE,
     'static': ast_1.TokenKind.STATIC, 'operator': ast_1.TokenKind.OPERATOR,
     'true': ast_1.TokenKind.TRUE, 'false': ast_1.TokenKind.FALSE,
-    'this': ast_1.TokenKind.THIS, 'macro': ast_1.TokenKind.MACRO,
+    'this': ast_1.TokenKind.THIS,
     'template': ast_1.TokenKind.TEMPLATE, 'typename': ast_1.TokenKind.TYPENAME,
+    'sizeof': ast_1.TokenKind.SIZEOF,
     'i8': ast_1.TokenKind.I8, 'i16': ast_1.TokenKind.I16, 'i32': ast_1.TokenKind.I32,
     'i64': ast_1.TokenKind.I64, 'i128': ast_1.TokenKind.I128,
     'u8': ast_1.TokenKind.U8, 'u16': ast_1.TokenKind.U16, 'u32': ast_1.TokenKind.U32,
@@ -36,8 +38,12 @@ class Lexer {
         this.pos = 0;
         this.line = 1;
         this.col = 1;
+        this.bol = 0;
         this.tokens = [];
         this.tokenPos = 0;
+        this.macros = new Map();
+        this.condStack = [];
+        this.skippedRanges = [];
         this.source = source;
         this.tokenize();
     }
@@ -53,6 +59,7 @@ class Lexer {
         if (c === '\n') {
             this.line++;
             this.col = 1;
+            this.bol = this.pos;
         }
         else {
             this.col++;
@@ -78,6 +85,8 @@ class Lexer {
                         this.advance();
                     }
                     break;
+                case '/':
+                    return;
                 default:
                     return;
             }
@@ -145,7 +154,7 @@ class Lexer {
     readString() {
         const startLine = this.line;
         const startCol = this.col;
-        this.advance(); // skip opening "
+        this.advance();
         let text = '';
         while (this.cur() !== '"' && this.cur() !== '\0') {
             if (this.cur() === '\\') {
@@ -189,7 +198,7 @@ class Lexer {
     readChar() {
         const startLine = this.line;
         const startCol = this.col;
-        this.advance(); // skip opening '
+        this.advance();
         let c;
         if (this.cur() === '\\') {
             this.advance();
@@ -231,7 +240,7 @@ class Lexer {
     readAtDirective() {
         const startLine = this.line;
         const startCol = this.col;
-        this.advance(); // skip @
+        this.advance();
         let text = '';
         while (this.isAlnum(this.cur())) {
             text += this.advance();
@@ -242,179 +251,307 @@ class Lexer {
         }
         return new ast_1.Token(ast_1.TokenKind.ERROR, '@' + text, startLine, startCol);
     }
-    tokenize() {
+    isMacroDefined(name) {
+        return this.macros.has(name);
+    }
+    collectMacros() {
+        const pattern = /macro\s+(\w+)/g;
+        let match;
+        while ((match = pattern.exec(this.source)) !== null) {
+            if (!this.macros.has(match[1])) {
+                this.macros.set(match[1], '1');
+            }
+        }
+    }
+    preprocessToken() {
         while (true) {
-            this.skipWhitespace();
-            if (this.cur() === '\0') {
-                this.tokens.push(new ast_1.Token(ast_1.TokenKind.EOF, '', this.line, this.col));
-                break;
-            }
-            const startLine = this.line;
-            const startCol = this.col;
-            const c = this.advance();
-            if (this.isAlpha(c)) {
-                this.pos--;
-                this.col--;
-                this.tokens.push(this.readIdent());
-                continue;
-            }
-            if (this.isDigit(c)) {
-                this.pos--;
-                this.col--;
-                this.tokens.push(this.readNumber());
-                continue;
-            }
-            switch (c) {
-                case '"':
-                    this.pos--;
-                    this.col--;
-                    this.tokens.push(this.readString());
-                    break;
-                case '\'':
-                    this.pos--;
-                    this.col--;
-                    this.tokens.push(this.readChar());
-                    break;
-                case '@':
-                    this.pos--;
-                    this.col--;
-                    this.tokens.push(this.readAtDirective());
-                    break;
-                case '+':
-                    this.tokens.push(new ast_1.Token(ast_1.TokenKind.PLUS, '+', startLine, startCol));
-                    break;
-                case '-':
-                    if (this.cur() === '>') {
-                        this.advance();
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.ARROW, '->', startLine, startCol));
+            const t = this.rawToken();
+            switch (t.kind) {
+                case ast_1.TokenKind.AT_IF: {
+                    let negate = false;
+                    let next = this.rawToken();
+                    if (next.kind === ast_1.TokenKind.NOT) {
+                        negate = true;
+                        next = this.rawToken();
+                    }
+                    let defined = false;
+                    if (next.kind === ast_1.TokenKind.IDENT) {
+                        defined = this.isMacroDefined(next.lexeme);
+                    }
+                    const result = negate ? !defined : defined;
+                    if (result) {
+                        this.condStack.push({ in_true_branch: true, skipping: false, has_else: false, skipStartLine: 0, skipStartCol: 0 });
                     }
                     else {
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.MINUS, '-', startLine, startCol));
+                        this.condStack.push({ in_true_branch: false, skipping: true, has_else: false, skipStartLine: 0, skipStartCol: 0 });
                     }
-                    break;
-                case '*':
-                    this.tokens.push(new ast_1.Token(ast_1.TokenKind.STAR, '*', startLine, startCol));
-                    break;
-                case '/':
-                    this.tokens.push(new ast_1.Token(ast_1.TokenKind.SLASH, '/', startLine, startCol));
-                    break;
-                case '%':
-                    this.tokens.push(new ast_1.Token(ast_1.TokenKind.PERCENT, '%', startLine, startCol));
-                    break;
-                case '(':
-                    this.tokens.push(new ast_1.Token(ast_1.TokenKind.LPAREN, '(', startLine, startCol));
-                    break;
-                case ')':
-                    this.tokens.push(new ast_1.Token(ast_1.TokenKind.RPAREN, ')', startLine, startCol));
-                    break;
-                case '{':
-                    this.tokens.push(new ast_1.Token(ast_1.TokenKind.LBRACE, '{', startLine, startCol));
-                    break;
-                case '}':
-                    this.tokens.push(new ast_1.Token(ast_1.TokenKind.RBRACE, '}', startLine, startCol));
-                    break;
-                case '[':
-                    this.tokens.push(new ast_1.Token(ast_1.TokenKind.LBRACKET, '[', startLine, startCol));
-                    break;
-                case ']':
-                    this.tokens.push(new ast_1.Token(ast_1.TokenKind.RBRACKET, ']', startLine, startCol));
-                    break;
-                case ';':
-                    this.tokens.push(new ast_1.Token(ast_1.TokenKind.SEMICOLON, ';', startLine, startCol));
-                    break;
-                case ':':
-                    if (this.cur() === ':') {
-                        this.advance();
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.DOUBLE_COLON, '::', startLine, startCol));
+                    continue;
+                }
+                case ast_1.TokenKind.AT_ELIF: {
+                    if (this.condStack.length === 0) {
+                        continue;
+                    }
+                    const state = this.condStack[this.condStack.length - 1];
+                    if (state.has_else) {
+                        continue;
+                    }
+                    if (state.in_true_branch) {
+                        state.skipping = true;
+                        state.skipStartLine = 0;
+                        state.skipStartCol = 0;
                     }
                     else {
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.COLON, ':', startLine, startCol));
+                        if (state.skipStartLine > 0) {
+                            this.skippedRanges.push({
+                                startLine: state.skipStartLine,
+                                startCol: state.skipStartCol,
+                                endLine: t.line,
+                                endCol: t.col + t.lexeme.length - 1,
+                            });
+                            state.skipStartLine = 0;
+                        }
+                        let negate = false;
+                        let next = this.rawToken();
+                        if (next.kind === ast_1.TokenKind.NOT) {
+                            negate = true;
+                            next = this.rawToken();
+                        }
+                        let defined = false;
+                        if (next.kind === ast_1.TokenKind.IDENT) {
+                            defined = this.isMacroDefined(next.lexeme);
+                        }
+                        const result = negate ? !defined : defined;
+                        if (result) {
+                            state.in_true_branch = true;
+                            state.skipping = false;
+                        }
                     }
-                    break;
-                case ',':
-                    this.tokens.push(new ast_1.Token(ast_1.TokenKind.COMMA, ',', startLine, startCol));
-                    break;
-                case '.':
-                    if (this.cur() === '.' && this.peek(1) === '.') {
-                        this.advance();
-                        this.advance();
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.VARARG, '...', startLine, startCol));
+                    continue;
+                }
+                case ast_1.TokenKind.AT_ELSE: {
+                    if (this.condStack.length === 0) {
+                        continue;
                     }
-                    else {
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.DOT, '.', startLine, startCol));
+                    const state = this.condStack[this.condStack.length - 1];
+                    if (state.has_else) {
+                        continue;
                     }
-                    break;
-                case '=':
-                    if (this.cur() === '=') {
-                        this.advance();
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.EQ, '==', startLine, startCol));
-                    }
-                    else {
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.ASSIGN, '=', startLine, startCol));
-                    }
-                    break;
-                case '!':
-                    if (this.cur() === '=') {
-                        this.advance();
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.NEQ, '!=', startLine, startCol));
-                    }
-                    else {
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.NOT, '!', startLine, startCol));
-                    }
-                    break;
-                case '<':
-                    if (this.cur() === '=') {
-                        this.advance();
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.LTE, '<=', startLine, startCol));
-                    }
-                    else if (this.cur() === '<') {
-                        this.advance();
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.LSHIFT, '<<', startLine, startCol));
+                    state.has_else = true;
+                    if (state.in_true_branch) {
+                        state.skipping = true;
+                        state.skipStartLine = 0;
+                        state.skipStartCol = 0;
                     }
                     else {
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.LT, '<', startLine, startCol));
+                        if (state.skipStartLine > 0) {
+                            this.skippedRanges.push({
+                                startLine: state.skipStartLine,
+                                startCol: state.skipStartCol,
+                                endLine: t.line,
+                                endCol: t.col + t.lexeme.length - 1,
+                            });
+                            state.skipStartLine = 0;
+                        }
+                        state.in_true_branch = true;
+                        state.skipping = false;
                     }
-                    break;
-                case '>':
-                    if (this.cur() === '=') {
-                        this.advance();
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.GTE, '>=', startLine, startCol));
+                    continue;
+                }
+                case ast_1.TokenKind.AT_END: {
+                    if (this.condStack.length > 0) {
+                        const state = this.condStack.pop();
+                        if (state.skipping && state.skipStartLine > 0) {
+                            this.skippedRanges.push({
+                                startLine: state.skipStartLine,
+                                startCol: state.skipStartCol,
+                                endLine: t.line,
+                                endCol: t.col + t.lexeme.length - 1,
+                            });
+                        }
                     }
-                    else if (this.cur() === '>') {
-                        this.advance();
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.RSHIFT, '>>', startLine, startCol));
-                    }
-                    else {
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.GT, '>', startLine, startCol));
-                    }
-                    break;
-                case '&':
-                    if (this.cur() === '&') {
-                        this.advance();
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.AND, '&&', startLine, startCol));
-                    }
-                    else {
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.BIT_AND, '&', startLine, startCol));
-                    }
-                    break;
-                case '|':
-                    if (this.cur() === '|') {
-                        this.advance();
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.OR, '||', startLine, startCol));
-                    }
-                    else {
-                        this.tokens.push(new ast_1.Token(ast_1.TokenKind.BIT_OR, '|', startLine, startCol));
-                    }
-                    break;
-                case '^':
-                    this.tokens.push(new ast_1.Token(ast_1.TokenKind.BIT_XOR, '^', startLine, startCol));
-                    break;
-                case '~':
-                    this.tokens.push(new ast_1.Token(ast_1.TokenKind.BIT_NOT, '~', startLine, startCol));
-                    break;
+                    continue;
+                }
+                case ast_1.TokenKind.EOF: {
+                    return t;
+                }
                 default:
-                    this.tokens.push(new ast_1.Token(ast_1.TokenKind.ERROR, c, startLine, startCol));
-                    break;
+                    if (this.condStack.length > 0 && this.condStack[this.condStack.length - 1].skipping) {
+                        const state = this.condStack[this.condStack.length - 1];
+                        if (state.skipStartLine === 0) {
+                            state.skipStartLine = t.line;
+                            state.skipStartCol = t.col;
+                        }
+                        continue;
+                    }
+                    return t;
+            }
+        }
+    }
+    rawToken() {
+        this.skipWhitespace();
+        if (this.cur() === '\0') {
+            return new ast_1.Token(ast_1.TokenKind.EOF, '', this.line, this.col);
+        }
+        const startLine = this.line;
+        const startCol = this.col;
+        const c = this.advance();
+        if (this.isAlpha(c)) {
+            this.pos--;
+            this.col--;
+            return this.readIdent();
+        }
+        if (this.isDigit(c)) {
+            this.pos--;
+            this.col--;
+            return this.readNumber();
+        }
+        switch (c) {
+            case '"':
+                this.pos--;
+                this.col--;
+                return this.readString();
+            case '\'':
+                this.pos--;
+                this.col--;
+                return this.readChar();
+            case '@':
+                this.pos--;
+                this.col--;
+                return this.readAtDirective();
+            case '+':
+                if (this.cur() === '=') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.PLUS_ASSIGN, '+=', startLine, startCol);
+                }
+                return new ast_1.Token(ast_1.TokenKind.PLUS, '+', startLine, startCol);
+            case '-':
+                if (this.cur() === '>') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.ARROW, '->', startLine, startCol);
+                }
+                else if (this.cur() === '=') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.MINUS_ASSIGN, '-=', startLine, startCol);
+                }
+                return new ast_1.Token(ast_1.TokenKind.MINUS, '-', startLine, startCol);
+            case '*':
+                if (this.cur() === '=') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.STAR_ASSIGN, '*=', startLine, startCol);
+                }
+                return new ast_1.Token(ast_1.TokenKind.STAR, '*', startLine, startCol);
+            case '/':
+                if (this.cur() === '=') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.SLASH_ASSIGN, '/=', startLine, startCol);
+                }
+                return new ast_1.Token(ast_1.TokenKind.SLASH, '/', startLine, startCol);
+            case '%':
+                if (this.cur() === '=') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.PERCENT_ASSIGN, '%=', startLine, startCol);
+                }
+                return new ast_1.Token(ast_1.TokenKind.PERCENT, '%', startLine, startCol);
+            case '(': return new ast_1.Token(ast_1.TokenKind.LPAREN, '(', startLine, startCol);
+            case ')': return new ast_1.Token(ast_1.TokenKind.RPAREN, ')', startLine, startCol);
+            case '{': return new ast_1.Token(ast_1.TokenKind.LBRACE, '{', startLine, startCol);
+            case '}': return new ast_1.Token(ast_1.TokenKind.RBRACE, '}', startLine, startCol);
+            case '[': return new ast_1.Token(ast_1.TokenKind.LBRACKET, '[', startLine, startCol);
+            case ']': return new ast_1.Token(ast_1.TokenKind.RBRACKET, ']', startLine, startCol);
+            case ';': return new ast_1.Token(ast_1.TokenKind.SEMICOLON, ';', startLine, startCol);
+            case ':':
+                if (this.cur() === ':') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.DOUBLE_COLON, '::', startLine, startCol);
+                }
+                return new ast_1.Token(ast_1.TokenKind.COLON, ':', startLine, startCol);
+            case ',': return new ast_1.Token(ast_1.TokenKind.COMMA, ',', startLine, startCol);
+            case '.':
+                if (this.cur() === '.' && this.peek(1) === '.') {
+                    this.advance();
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.VARARG, '...', startLine, startCol);
+                }
+                return new ast_1.Token(ast_1.TokenKind.DOT, '.', startLine, startCol);
+            case '=':
+                if (this.cur() === '=') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.EQ, '==', startLine, startCol);
+                }
+                return new ast_1.Token(ast_1.TokenKind.ASSIGN, '=', startLine, startCol);
+            case '!':
+                if (this.cur() === '=') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.NEQ, '!=', startLine, startCol);
+                }
+                return new ast_1.Token(ast_1.TokenKind.NOT, '!', startLine, startCol);
+            case '<':
+                if (this.cur() === '=') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.LTE, '<=', startLine, startCol);
+                }
+                else if (this.cur() === '<') {
+                    this.advance();
+                    if (this.cur() === '=') {
+                        this.advance();
+                        return new ast_1.Token(ast_1.TokenKind.LSHIFT_ASSIGN, '<<=', startLine, startCol);
+                    }
+                    return new ast_1.Token(ast_1.TokenKind.LSHIFT, '<<', startLine, startCol);
+                }
+                return new ast_1.Token(ast_1.TokenKind.LT, '<', startLine, startCol);
+            case '>':
+                if (this.cur() === '=') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.GTE, '>=', startLine, startCol);
+                }
+                else if (this.cur() === '>') {
+                    this.advance();
+                    if (this.cur() === '=') {
+                        this.advance();
+                        return new ast_1.Token(ast_1.TokenKind.RSHIFT_ASSIGN, '>>=', startLine, startCol);
+                    }
+                    return new ast_1.Token(ast_1.TokenKind.RSHIFT, '>>', startLine, startCol);
+                }
+                return new ast_1.Token(ast_1.TokenKind.GT, '>', startLine, startCol);
+            case '&':
+                if (this.cur() === '&') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.AND, '&&', startLine, startCol);
+                }
+                else if (this.cur() === '=') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.AND_ASSIGN, '&=', startLine, startCol);
+                }
+                return new ast_1.Token(ast_1.TokenKind.BIT_AND, '&', startLine, startCol);
+            case '|':
+                if (this.cur() === '|') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.OR, '||', startLine, startCol);
+                }
+                else if (this.cur() === '=') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.OR_ASSIGN, '|=', startLine, startCol);
+                }
+                return new ast_1.Token(ast_1.TokenKind.BIT_OR, '|', startLine, startCol);
+            case '^':
+                if (this.cur() === '=') {
+                    this.advance();
+                    return new ast_1.Token(ast_1.TokenKind.XOR_ASSIGN, '^=', startLine, startCol);
+                }
+                return new ast_1.Token(ast_1.TokenKind.BIT_XOR, '^', startLine, startCol);
+            case '~': return new ast_1.Token(ast_1.TokenKind.BIT_NOT, '~', startLine, startCol);
+            case '$': return new ast_1.Token(ast_1.TokenKind.DOLLAR, '$', startLine, startCol);
+            default:
+                return new ast_1.Token(ast_1.TokenKind.ERROR, c, startLine, startCol);
+        }
+    }
+    tokenize() {
+        this.collectMacros();
+        while (true) {
+            const t = this.preprocessToken();
+            this.tokens.push(t);
+            if (t.kind === ast_1.TokenKind.EOF) {
+                break;
             }
         }
     }

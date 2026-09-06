@@ -137,12 +137,32 @@
 	"Template Function": {
 		"prefix": "template",
 		"body": [
-			"template<${1:T}:typename>",
+			"template$${1:T}:typename$$",
 			"${2:T} ${3:function_name}(${4:a}: ${2:T}, ${5:b}: ${2:T}) {",
 			"\t${6:// body}",
 			"}"
 		],
 		"description": "Define a template function"
+	},
+	"Template Class": {
+		"prefix": "templateclass",
+		"body": [
+			"template$${1:T}:typename$$",
+			"class ${2:Name} {",
+			"public:",
+			"\t${3:field}: ${1:T};",
+			"",
+			"\t${2:Name}(${4:params}) {",
+			"\t\t${5:// constructor body}",
+			"\t}",
+			"}"
+		],
+		"description": "Define a template class"
+	},
+	"Sizeof Expression": {
+		"prefix": "sizeof",
+		"body": "sizeof(${1:type})",
+		"description": "Get size of a type"
 	},
 	"Extern Declaration": {
 		"prefix": "extern",

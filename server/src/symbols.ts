@@ -92,16 +92,6 @@ export class SymbolTable {
 			case AstNodeKind.TEMPLATE_DEF:
 				this.collectTemplate(decl, currentNamespace);
 				break;
-			case AstNodeKind.MACRO_DEF:
-				if (decl.macroName) {
-					this.add(decl.macroName, {
-						name: decl.macroName,
-						kind: 'macro',
-						line: decl.line,
-						col: decl.col,
-					});
-				}
-				break;
 			case AstNodeKind.IMPORT:
 				// Imports are not collected for completion
 				break;

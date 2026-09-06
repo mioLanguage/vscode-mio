@@ -190,6 +190,7 @@ const KEYWORDS = [
     { label: 'namespace', kind: node_1.CompletionItemKind.Keyword, detail: '定义命名空间' },
     { label: 'template', kind: node_1.CompletionItemKind.Keyword, detail: '定义模板' },
     { label: 'typename', kind: node_1.CompletionItemKind.Keyword, detail: '模板类型参数' },
+    { label: 'sizeof', kind: node_1.CompletionItemKind.Keyword, detail: '获取类型大小' },
     { label: 'public', kind: node_1.CompletionItemKind.Keyword, detail: '公开访问' },
     { label: 'private', kind: node_1.CompletionItemKind.Keyword, detail: '私有访问' },
     { label: 'protected', kind: node_1.CompletionItemKind.Keyword, detail: '受保护访问' },
@@ -283,7 +284,14 @@ const SNIPPETS = [
         label: 'template',
         kind: node_1.CompletionItemKind.Snippet,
         detail: '模板函数',
-        insertText: 'template<${1:T}:typename>\n${2:T} ${3:func}(${4:a}: ${2:T}) {\n\t${5:// body}\n}',
+        insertText: 'template$${1:T}:typename$$\n${2:T} ${3:func}(${4:a}: ${2:T}) {\n\t${5:// body}\n}',
+        insertTextFormat: 2,
+    },
+    {
+        label: 'sizeof',
+        kind: node_1.CompletionItemKind.Snippet,
+        detail: '获取类型大小',
+        insertText: 'sizeof(${1:type})',
         insertTextFormat: 2,
     },
     {
@@ -306,7 +314,7 @@ function parseDocument(text) {
     const ast = parser.parse();
     const symbols = new symbols_1.SymbolTable();
     symbols.collectFromAst(ast);
-    return { symbols, errors: parser.getErrors() };
+    return { symbols, errors: parser.getErrors(), skippedRanges: parser.getSkippedRanges() };
 }
 function getSymbolKind(sym) {
     switch (sym.kind) {
@@ -360,7 +368,7 @@ documents.onDidChangeContent(change => {
 });
 async function validateTextDocument(textDocument) {
     const text = textDocument.getText();
-    const { errors } = parseDocument(text);
+    const { errors, skippedRanges } = parseDocument(text);
     const diagnostics = [];
     for (const err of errors) {
         // Parse "Line X:Y: message" format
@@ -379,6 +387,18 @@ async function validateTextDocument(textDocument) {
                 source: 'mio',
             });
         }
+    }
+    for (const range of skippedRanges) {
+        diagnostics.push({
+            severity: node_1.DiagnosticSeverity.Hint,
+            range: {
+                start: { line: range.startLine - 1, character: range.startCol - 1 },
+                end: { line: range.endLine - 1, character: range.endCol - 1 },
+            },
+            message: 'Skipped by conditional compilation',
+            source: 'mio',
+            tags: [node_1.DiagnosticTag.Unnecessary],
+        });
     }
     connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
 }
@@ -610,6 +630,7 @@ connection.onHover(async (params) => {
         'bool': '布尔类型 (true / false)',
         'char': '单个字符',
         'void': '空类型（无返回值）',
+        'sizeof': '获取类型或变量的大小（字节数）',
     };
     if (typeItems[word]) {
         return {

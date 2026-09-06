@@ -1,11 +1,26 @@
 import { Token } from './ast';
+export interface SkippedRange {
+    startLine: number;
+    startCol: number;
+    endLine: number;
+    endCol: number;
+}
 export declare class Lexer {
     private source;
     private pos;
     private line;
     private col;
+    private bol;
     private tokens;
     private tokenPos;
+    private macros;
+    private condStack;
+    skippedRanges: {
+        startLine: number;
+        startCol: number;
+        endLine: number;
+        endCol: number;
+    }[];
     constructor(source: string);
     private cur;
     private advance;
@@ -20,6 +35,10 @@ export declare class Lexer {
     private readString;
     private readChar;
     private readAtDirective;
+    private isMacroDefined;
+    private collectMacros;
+    private preprocessToken;
+    private rawToken;
     private tokenize;
     peekToken(): Token;
     nextToken(): Token;
