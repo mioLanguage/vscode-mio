@@ -5,7 +5,6 @@ const ast_1 = require("./ast");
 const KEYWORDS = {
     'import': ast_1.TokenKind.IMPORT, 'extern': ast_1.TokenKind.EXTERN,
     'var': ast_1.TokenKind.VAR, 'const': ast_1.TokenKind.CONST,
-    'macro': ast_1.TokenKind.IDENT,
     'if': ast_1.TokenKind.IF, 'else': ast_1.TokenKind.ELSE,
     'while': ast_1.TokenKind.WHILE, 'for': ast_1.TokenKind.FOR,
     'break': ast_1.TokenKind.BREAK, 'continue': ast_1.TokenKind.CONTINUE,
@@ -32,6 +31,7 @@ const KEYWORDS = {
 const AT_DIRECTIVES = {
     'if': ast_1.TokenKind.AT_IF, 'elif': ast_1.TokenKind.AT_ELIF,
     'else': ast_1.TokenKind.AT_ELSE, 'end': ast_1.TokenKind.AT_END,
+    'macro': ast_1.TokenKind.AT_MACRO,
 };
 class Lexer {
     constructor(source) {
@@ -44,8 +44,111 @@ class Lexer {
         this.macros = new Map();
         this.condStack = [];
         this.skippedRanges = [];
+        this.errors = [];
         this.source = source;
+        this.collectMacros();
         this.tokenize();
+    }
+    collectMacros() {
+        const savedPos = this.pos;
+        const savedLine = this.line;
+        const savedCol = this.col;
+        while (this.pos < this.source.length) {
+            this.skipWhitespace();
+            if (this.cur() === '@') {
+                const start = this.pos;
+                this.advance();
+                let directive = '';
+                while (this.isAlnum(this.cur())) {
+                    directive += this.advance();
+                }
+                if (directive === 'macro') {
+                    while (this.cur() === ' ' || this.cur() === '\t' || this.cur() === '\r') {
+                        this.advance();
+                    }
+                    if (this.cur() !== '\0' && this.cur() !== '\n' && this.isAlpha(this.cur())) {
+                        let name = '';
+                        while (this.isAlnum(this.cur())) {
+                            name += this.advance();
+                        }
+                        while (this.cur() === ' ' || this.cur() === '\t' || this.cur() === '\r') {
+                            this.advance();
+                        }
+                        let value = '1';
+                        if (this.cur() !== '\0' && this.cur() !== '\n') {
+                            const vstart = this.pos;
+                            if (this.isAlpha(this.cur())) {
+                                while (this.isAlnum(this.cur())) {
+                                    this.advance();
+                                }
+                            }
+                            else if (this.isDigit(this.cur())) {
+                                while (this.isDigit(this.cur()) || this.cur() === '.') {
+                                    this.advance();
+                                }
+                            }
+                            else if (this.cur() === '"') {
+                                this.advance();
+                                while (this.cur() !== '"' && this.cur() !== '\0' && this.cur() !== '\n') {
+                                    this.advance();
+                                }
+                                if (this.cur() === '"') {
+                                    this.advance();
+                                }
+                            }
+                            const vlen = this.pos - vstart;
+                            if (vlen > 0) {
+                                value = this.source.substring(vstart, vstart + vlen);
+                            }
+                        }
+                        if (!this.macros.has(name)) {
+                            this.macros.set(name, value);
+                        }
+                    }
+                }
+            }
+            if (this.cur() !== '\n' && this.cur() !== '\0') {
+                while (this.cur() !== '\n' && this.cur() !== '\0') {
+                    this.advance();
+                }
+            }
+            if (this.cur() === '\n') {
+                this.advance();
+            }
+        }
+        this.pos = savedPos;
+        this.line = savedLine;
+        this.col = savedCol;
+    }
+    get peekToken() {
+        if (this.tokenPos < this.tokens.length) {
+            return this.tokens[this.tokenPos];
+        }
+        return this.tokens[this.tokens.length - 1];
+    }
+    getAllTokens() {
+        return this.tokens;
+    }
+    nextToken() {
+        if (this.tokenPos < this.tokens.length) {
+            return this.tokens[this.tokenPos++];
+        }
+        return this.tokens[this.tokens.length - 1];
+    }
+    isTemplateInstantiation() {
+        const savedPos = this.tokenPos;
+        if (this.tokenPos >= this.tokens.length) {
+            return false;
+        }
+        const t1 = this.tokens[this.tokenPos];
+        if (t1.kind !== ast_1.TokenKind.DOLLAR) {
+            return false;
+        }
+        if (this.tokenPos + 1 >= this.tokens.length) {
+            return false;
+        }
+        const t2 = this.tokens[this.tokenPos + 1];
+        return t2.kind === ast_1.TokenKind.LPAREN;
     }
     cur() {
         return this.pos < this.source.length ? this.source[this.pos] : '\0';
@@ -104,12 +207,25 @@ class Lexer {
     isHexDigit(c) {
         return this.isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
     }
+    isMacroDefined(name) {
+        return this.macros.has(name);
+    }
+    addMacro(name, value) {
+        if (this.macros.has(name)) {
+            this.errors.push(`macro '${name}' is already defined`);
+            return;
+        }
+        this.macros.set(name, value);
+    }
     readIdent() {
         const startLine = this.line;
         const startCol = this.col;
         let text = '';
         while (this.isAlnum(this.cur())) {
             text += this.advance();
+        }
+        if (text === 'macro') {
+            return new ast_1.Token(ast_1.TokenKind.ERROR, "'macro' is only allowed in conditional compilation context", startLine, startCol);
         }
         const kw = KEYWORDS[text];
         if (kw !== undefined) {
@@ -249,19 +365,7 @@ class Lexer {
         if (kind !== undefined) {
             return new ast_1.Token(kind, '@' + text, startLine, startCol);
         }
-        return new ast_1.Token(ast_1.TokenKind.ERROR, '@' + text, startLine, startCol);
-    }
-    isMacroDefined(name) {
-        return this.macros.has(name);
-    }
-    collectMacros() {
-        const pattern = /macro\s+(\w+)/g;
-        let match;
-        while ((match = pattern.exec(this.source)) !== null) {
-            if (!this.macros.has(match[1])) {
-                this.macros.set(match[1], '1');
-            }
-        }
+        return new ast_1.Token(ast_1.TokenKind.ERROR, "unknown directive '@" + text + "'", startLine, startCol);
     }
     preprocessToken() {
         while (true) {
@@ -289,10 +393,17 @@ class Lexer {
                 }
                 case ast_1.TokenKind.AT_ELIF: {
                     if (this.condStack.length === 0) {
+                        this.errors.push(`Line ${t.line}:${t.col}: stray '@elif' outside of conditional compilation block`);
+                        const next = this.rawToken();
+                        if (next.kind === ast_1.TokenKind.NOT) { /* consume */ }
+                        else { /* already consumed */ }
                         continue;
                     }
                     const state = this.condStack[this.condStack.length - 1];
                     if (state.has_else) {
+                        this.errors.push(`Line ${t.line}:${t.col}: '@elif' after '@else'`);
+                        const next = this.rawToken();
+                        if (next.kind === ast_1.TokenKind.NOT) { /* consume */ }
                         continue;
                     }
                     if (state.in_true_branch) {
@@ -330,10 +441,12 @@ class Lexer {
                 }
                 case ast_1.TokenKind.AT_ELSE: {
                     if (this.condStack.length === 0) {
+                        this.errors.push(`Line ${t.line}:${t.col}: stray '@else' outside of conditional compilation block`);
                         continue;
                     }
                     const state = this.condStack[this.condStack.length - 1];
                     if (state.has_else) {
+                        this.errors.push(`Line ${t.line}:${t.col}: duplicate '@else'`);
                         continue;
                     }
                     state.has_else = true;
@@ -358,20 +471,77 @@ class Lexer {
                     continue;
                 }
                 case ast_1.TokenKind.AT_END: {
-                    if (this.condStack.length > 0) {
-                        const state = this.condStack.pop();
-                        if (state.skipping && state.skipStartLine > 0) {
-                            this.skippedRanges.push({
-                                startLine: state.skipStartLine,
-                                startCol: state.skipStartCol,
-                                endLine: t.line,
-                                endCol: t.col + t.lexeme.length - 1,
-                            });
-                        }
+                    if (this.condStack.length === 0) {
+                        this.errors.push(`Line ${t.line}:${t.col}: stray '@end' outside of conditional compilation block`);
+                        continue;
+                    }
+                    const state = this.condStack.pop();
+                    if (state.skipping && state.skipStartLine > 0) {
+                        this.skippedRanges.push({
+                            startLine: state.skipStartLine,
+                            startCol: state.skipStartCol,
+                            endLine: t.line,
+                            endCol: t.col + t.lexeme.length - 1,
+                        });
                     }
                     continue;
                 }
+                case ast_1.TokenKind.AT_MACRO: {
+                    const atLine = t.line;
+                    const atCol = t.col;
+                    while (this.cur() === ' ' || this.cur() === '\t' || this.cur() === '\r') {
+                        this.advance();
+                    }
+                    if (this.cur() === '\0' || this.cur() === '\n') {
+                        this.errors.push(`Line ${atLine}:${atCol}: expected macro name after '@macro'`);
+                        continue;
+                    }
+                    if (!this.isAlpha(this.cur())) {
+                        this.errors.push(`Line ${atLine}:${atCol}: expected macro name after '@macro'`);
+                        continue;
+                    }
+                    let name = '';
+                    while (this.isAlnum(this.cur())) {
+                        name += this.advance();
+                    }
+                    while (this.cur() === ' ' || this.cur() === '\t' || this.cur() === '\r') {
+                        this.advance();
+                    }
+                    let value = '1';
+                    if (this.cur() !== '\0' && this.cur() !== '\n') {
+                        const valStart = this.pos;
+                        if (this.isAlpha(this.cur())) {
+                            while (this.isAlnum(this.cur())) {
+                                this.advance();
+                            }
+                        }
+                        else if (this.isDigit(this.cur())) {
+                            while (this.isDigit(this.cur()) || this.cur() === '.') {
+                                this.advance();
+                            }
+                        }
+                        else if (this.cur() === '"') {
+                            this.advance();
+                            while (this.cur() !== '"' && this.cur() !== '\0' && this.cur() !== '\n') {
+                                this.advance();
+                            }
+                            if (this.cur() === '"') {
+                                this.advance();
+                            }
+                        }
+                        const valLen = this.pos - valStart;
+                        if (valLen > 0) {
+                            value = this.source.substring(valStart, valStart + valLen);
+                        }
+                    }
+                    this.addMacro(name, value);
+                    continue;
+                }
                 case ast_1.TokenKind.EOF: {
+                    if (this.condStack.length > 0) {
+                        this.errors.push(`Line ${t.line}:${t.col}: unclosed '@if' (expected '@end')`);
+                        this.condStack.length = 0;
+                    }
                     return t;
                 }
                 default:
@@ -542,11 +712,10 @@ class Lexer {
             case '~': return new ast_1.Token(ast_1.TokenKind.BIT_NOT, '~', startLine, startCol);
             case '$': return new ast_1.Token(ast_1.TokenKind.DOLLAR, '$', startLine, startCol);
             default:
-                return new ast_1.Token(ast_1.TokenKind.ERROR, c, startLine, startCol);
+                return new ast_1.Token(ast_1.TokenKind.ERROR, "unexpected character '" + c + "'", startLine, startCol);
         }
     }
     tokenize() {
-        this.collectMacros();
         while (true) {
             const t = this.preprocessToken();
             this.tokens.push(t);
@@ -554,21 +723,6 @@ class Lexer {
                 break;
             }
         }
-    }
-    peekToken() {
-        if (this.tokenPos < this.tokens.length) {
-            return this.tokens[this.tokenPos];
-        }
-        return this.tokens[this.tokens.length - 1];
-    }
-    nextToken() {
-        if (this.tokenPos < this.tokens.length) {
-            return this.tokens[this.tokenPos++];
-        }
-        return this.tokens[this.tokens.length - 1];
-    }
-    getAllTokens() {
-        return this.tokens;
     }
 }
 exports.Lexer = Lexer;

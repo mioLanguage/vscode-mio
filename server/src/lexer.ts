@@ -3,7 +3,6 @@ import { Token, TokenKind } from './ast';
 const KEYWORDS: Record<string, TokenKind> = {
 	'import': TokenKind.IMPORT, 'extern': TokenKind.EXTERN,
 	'var': TokenKind.VAR, 'const': TokenKind.CONST,
-	'macro': TokenKind.IDENT,
 	'if': TokenKind.IF, 'else': TokenKind.ELSE,
 	'while': TokenKind.WHILE, 'for': TokenKind.FOR,
 	'break': TokenKind.BREAK, 'continue': TokenKind.CONTINUE,
@@ -31,6 +30,7 @@ const KEYWORDS: Record<string, TokenKind> = {
 const AT_DIRECTIVES: Record<string, TokenKind> = {
 	'if': TokenKind.AT_IF, 'elif': TokenKind.AT_ELIF,
 	'else': TokenKind.AT_ELSE, 'end': TokenKind.AT_END,
+	'macro': TokenKind.AT_MACRO,
 };
 
 interface CondState {
@@ -59,10 +59,100 @@ export class Lexer {
 	private macros: Map<string, string> = new Map();
 	private condStack: CondState[] = [];
 	public skippedRanges: { startLine: number; startCol: number; endLine: number; endCol: number }[] = [];
+	public errors: string[] = [];
 
 	constructor(source: string) {
 		this.source = source;
+		this.collectMacros();
 		this.tokenize();
+	}
+
+	private collectMacros(): void {
+		const savedPos = this.pos;
+		const savedLine = this.line;
+		const savedCol = this.col;
+		while (this.pos < this.source.length) {
+			this.skipWhitespace();
+			if (this.cur() === '@') {
+				const start = this.pos;
+				this.advance();
+				let directive = '';
+				while (this.isAlnum(this.cur())) {
+					directive += this.advance();
+				}
+				if (directive === 'macro') {
+					while (this.cur() === ' ' || this.cur() === '\t' || this.cur() === '\r') { this.advance(); }
+					if (this.cur() !== '\0' && this.cur() !== '\n' && this.isAlpha(this.cur())) {
+						let name = '';
+						while (this.isAlnum(this.cur())) {
+							name += this.advance();
+						}
+						while (this.cur() === ' ' || this.cur() === '\t' || this.cur() === '\r') { this.advance(); }
+						let value = '1';
+						if (this.cur() !== '\0' && this.cur() !== '\n') {
+							const vstart = this.pos;
+							if (this.isAlpha(this.cur())) {
+								while (this.isAlnum(this.cur())) { this.advance(); }
+							} else if (this.isDigit(this.cur())) {
+								while (this.isDigit(this.cur()) || this.cur() === '.') { this.advance(); }
+							} else if (this.cur() === '"') {
+								this.advance();
+								while (this.cur() !== '"' && this.cur() !== '\0' && this.cur() !== '\n') { this.advance(); }
+								if (this.cur() === '"') { this.advance(); }
+							}
+							const vlen = this.pos - vstart;
+							if (vlen > 0) {
+								value = this.source.substring(vstart, vstart + vlen);
+							}
+						}
+						if (!this.macros.has(name)) {
+							this.macros.set(name, value);
+						}
+					}
+				}
+			}
+			if (this.cur() !== '\n' && this.cur() !== '\0') {
+				while (this.cur() !== '\n' && this.cur() !== '\0') { this.advance(); }
+			}
+			if (this.cur() === '\n') { this.advance(); }
+		}
+		this.pos = savedPos;
+		this.line = savedLine;
+		this.col = savedCol;
+	}
+
+	get peekToken(): Token {
+		if (this.tokenPos < this.tokens.length) {
+			return this.tokens[this.tokenPos];
+		}
+		return this.tokens[this.tokens.length - 1];
+	}
+
+	getAllTokens(): Token[] {
+		return this.tokens;
+	}
+
+	nextToken(): Token {
+		if (this.tokenPos < this.tokens.length) {
+			return this.tokens[this.tokenPos++];
+		}
+		return this.tokens[this.tokens.length - 1];
+	}
+
+	isTemplateInstantiation(): boolean {
+		const savedPos = this.tokenPos;
+		if (this.tokenPos >= this.tokens.length) {
+			return false;
+		}
+		const t1 = this.tokens[this.tokenPos];
+		if (t1.kind !== TokenKind.DOLLAR) {
+			return false;
+		}
+		if (this.tokenPos + 1 >= this.tokens.length) {
+			return false;
+		}
+		const t2 = this.tokens[this.tokenPos + 1];
+		return t2.kind === TokenKind.LPAREN;
 	}
 
 	private cur(): string {
@@ -127,12 +217,27 @@ export class Lexer {
 		return this.isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 	}
 
+	private isMacroDefined(name: string): boolean {
+		return this.macros.has(name);
+	}
+
+	private addMacro(name: string, value: string): void {
+		if (this.macros.has(name)) {
+			this.errors.push(`macro '${name}' is already defined`);
+			return;
+		}
+		this.macros.set(name, value);
+	}
+
 	private readIdent(): Token {
 		const startLine = this.line;
 		const startCol = this.col;
 		let text = '';
 		while (this.isAlnum(this.cur())) {
 			text += this.advance();
+		}
+		if (text === 'macro') {
+			return new Token(TokenKind.ERROR, "'macro' is only allowed in conditional compilation context", startLine, startCol);
 		}
 		const kw = KEYWORDS[text];
 		if (kw !== undefined) {
@@ -245,21 +350,7 @@ export class Lexer {
 		if (kind !== undefined) {
 			return new Token(kind, '@' + text, startLine, startCol);
 		}
-		return new Token(TokenKind.ERROR, '@' + text, startLine, startCol);
-	}
-
-	private isMacroDefined(name: string): boolean {
-		return this.macros.has(name);
-	}
-
-	private collectMacros(): void {
-		const pattern = /macro\s+(\w+)/g;
-		let match: RegExpExecArray | null;
-		while ((match = pattern.exec(this.source)) !== null) {
-			if (!this.macros.has(match[1])) {
-				this.macros.set(match[1], '1');
-			}
-		}
+		return new Token(TokenKind.ERROR, "unknown directive '@" + text + "'", startLine, startCol);
 	}
 
 	private preprocessToken(): Token {
@@ -287,10 +378,17 @@ export class Lexer {
 				}
 				case TokenKind.AT_ELIF: {
 					if (this.condStack.length === 0) {
+						this.errors.push(`Line ${t.line}:${t.col}: stray '@elif' outside of conditional compilation block`);
+						const next = this.rawToken();
+						if (next.kind === TokenKind.NOT) { /* consume */ }
+						else { /* already consumed */ }
 						continue;
 					}
 					const state = this.condStack[this.condStack.length - 1];
 					if (state.has_else) {
+						this.errors.push(`Line ${t.line}:${t.col}: '@elif' after '@else'`);
+						const next = this.rawToken();
+						if (next.kind === TokenKind.NOT) { /* consume */ }
 						continue;
 					}
 					if (state.in_true_branch) {
@@ -327,10 +425,12 @@ export class Lexer {
 				}
 				case TokenKind.AT_ELSE: {
 					if (this.condStack.length === 0) {
+						this.errors.push(`Line ${t.line}:${t.col}: stray '@else' outside of conditional compilation block`);
 						continue;
 					}
 					const state = this.condStack[this.condStack.length - 1];
 					if (state.has_else) {
+						this.errors.push(`Line ${t.line}:${t.col}: duplicate '@else'`);
 						continue;
 					}
 					state.has_else = true;
@@ -354,20 +454,63 @@ export class Lexer {
 					continue;
 				}
 				case TokenKind.AT_END: {
-					if (this.condStack.length > 0) {
-						const state = this.condStack.pop()!;
-						if (state.skipping && state.skipStartLine > 0) {
-							this.skippedRanges.push({
-								startLine: state.skipStartLine,
-								startCol: state.skipStartCol,
-								endLine: t.line,
-								endCol: t.col + t.lexeme.length - 1,
-							});
-						}
+					if (this.condStack.length === 0) {
+						this.errors.push(`Line ${t.line}:${t.col}: stray '@end' outside of conditional compilation block`);
+						continue;
+					}
+					const state = this.condStack.pop()!;
+					if (state.skipping && state.skipStartLine > 0) {
+						this.skippedRanges.push({
+							startLine: state.skipStartLine,
+							startCol: state.skipStartCol,
+							endLine: t.line,
+							endCol: t.col + t.lexeme.length - 1,
+						});
 					}
 					continue;
 				}
+				case TokenKind.AT_MACRO: {
+					const atLine = t.line;
+					const atCol = t.col;
+					while (this.cur() === ' ' || this.cur() === '\t' || this.cur() === '\r') { this.advance(); }
+					if (this.cur() === '\0' || this.cur() === '\n') {
+						this.errors.push(`Line ${atLine}:${atCol}: expected macro name after '@macro'`);
+						continue;
+					}
+					if (!this.isAlpha(this.cur())) {
+						this.errors.push(`Line ${atLine}:${atCol}: expected macro name after '@macro'`);
+						continue;
+					}
+					let name = '';
+					while (this.isAlnum(this.cur())) {
+						name += this.advance();
+					}
+					while (this.cur() === ' ' || this.cur() === '\t' || this.cur() === '\r') { this.advance(); }
+					let value = '1';
+					if (this.cur() !== '\0' && this.cur() !== '\n') {
+						const valStart = this.pos;
+						if (this.isAlpha(this.cur())) {
+							while (this.isAlnum(this.cur())) { this.advance(); }
+						} else if (this.isDigit(this.cur())) {
+							while (this.isDigit(this.cur()) || this.cur() === '.') { this.advance(); }
+						} else if (this.cur() === '"') {
+							this.advance();
+							while (this.cur() !== '"' && this.cur() !== '\0' && this.cur() !== '\n') { this.advance(); }
+							if (this.cur() === '"') { this.advance(); }
+						}
+						const valLen = this.pos - valStart;
+						if (valLen > 0) {
+							value = this.source.substring(valStart, valStart + valLen);
+						}
+					}
+					this.addMacro(name, value);
+					continue;
+				}
 				case TokenKind.EOF: {
+					if (this.condStack.length > 0) {
+						this.errors.push(`Line ${t.line}:${t.col}: unclosed '@if' (expected '@end')`);
+						this.condStack.length = 0;
+					}
 					return t;
 				}
 				default:
@@ -532,12 +675,11 @@ export class Lexer {
 			case '~': return new Token(TokenKind.BIT_NOT, '~', startLine, startCol);
 			case '$': return new Token(TokenKind.DOLLAR, '$', startLine, startCol);
 			default:
-				return new Token(TokenKind.ERROR, c, startLine, startCol);
+				return new Token(TokenKind.ERROR, "unexpected character '" + c + "'", startLine, startCol);
 		}
 	}
 
 	private tokenize(): void {
-		this.collectMacros();
 		while (true) {
 			const t = this.preprocessToken();
 			this.tokens.push(t);
@@ -545,23 +687,5 @@ export class Lexer {
 				break;
 			}
 		}
-	}
-
-	peekToken(): Token {
-		if (this.tokenPos < this.tokens.length) {
-			return this.tokens[this.tokenPos];
-		}
-		return this.tokens[this.tokens.length - 1];
-	}
-
-	nextToken(): Token {
-		if (this.tokenPos < this.tokens.length) {
-			return this.tokens[this.tokenPos++];
-		}
-		return this.tokens[this.tokens.length - 1];
-	}
-
-	getAllTokens(): Token[] {
-		return this.tokens;
 	}
 }

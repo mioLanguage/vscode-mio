@@ -21,7 +21,13 @@ export declare class Lexer {
         endLine: number;
         endCol: number;
     }[];
+    errors: string[];
     constructor(source: string);
+    private collectMacros;
+    get peekToken(): Token;
+    getAllTokens(): Token[];
+    nextToken(): Token;
+    isTemplateInstantiation(): boolean;
     private cur;
     private advance;
     private peek;
@@ -30,18 +36,15 @@ export declare class Lexer {
     private isDigit;
     private isAlnum;
     private isHexDigit;
+    private isMacroDefined;
+    private addMacro;
     private readIdent;
     private readNumber;
     private readString;
     private readChar;
     private readAtDirective;
-    private isMacroDefined;
-    private collectMacros;
     private preprocessToken;
     private rawToken;
     private tokenize;
-    peekToken(): Token;
-    nextToken(): Token;
-    getAllTokens(): Token[];
 }
 //# sourceMappingURL=lexer.d.ts.map
