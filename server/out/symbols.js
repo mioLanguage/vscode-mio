@@ -10,16 +10,40 @@ class SymbolTable {
         this.parent = parent;
     }
     add(name, info) {
-        this.symbols.set(name, info);
+        if (!this.symbols.has(name)) {
+            this.symbols.set(name, info);
+        }
     }
     addType(name, info) {
-        this.types.set(name, info);
+        if (!this.types.has(name)) {
+            this.types.set(name, info);
+        }
     }
     get(name) {
-        return this.symbols.get(name) || this.parent?.get(name);
+        const sym = this.symbols.get(name);
+        if (sym) {
+            return sym;
+        }
+        for (const [, ns] of this.namespaces) {
+            const nsSym = ns.symbols.get(name);
+            if (nsSym) {
+                return nsSym;
+            }
+        }
+        return this.parent?.get(name);
     }
     getType(name) {
-        return this.types.get(name) || this.parent?.getType(name);
+        const ty = this.types.get(name);
+        if (ty) {
+            return ty;
+        }
+        for (const [, ns] of this.namespaces) {
+            const nsTy = ns.types.get(name);
+            if (nsTy) {
+                return nsTy;
+            }
+        }
+        return this.parent?.getType(name);
     }
     getAllSymbols() {
         const result = [];
@@ -34,6 +58,28 @@ class SymbolTable {
             result.push(sym);
         }
         return result;
+    }
+    setFilePath(filePath) {
+        for (const [, sym] of this.symbols) {
+            sym.filePath = filePath;
+        }
+        for (const [, sym] of this.types) {
+            sym.filePath = filePath;
+        }
+        for (const [, ns] of this.namespaces) {
+            ns.setFilePath(filePath);
+        }
+    }
+    mergeInto(target) {
+        for (const [name, sym] of this.symbols) {
+            target.symbols.set(name, sym);
+        }
+        for (const [name, sym] of this.types) {
+            target.types.set(name, sym);
+        }
+        for (const [name, ns] of this.namespaces) {
+            target.namespaces.set(name, ns);
+        }
     }
     collectFromAst(ast, currentNamespace) {
         for (const decl of ast.decls) {
@@ -90,6 +136,46 @@ class SymbolTable {
             col: decl.col,
         };
         this.add(name, info);
+        if (decl.body) {
+            this.collectStmts(decl.body.stmts);
+        }
+    }
+    collectStmts(stmts) {
+        for (const stmt of stmts) {
+            switch (stmt.kind) {
+                case ast_1.AstNodeKind.VAR_DECL:
+                    this.collectVariable(stmt);
+                    break;
+                case ast_1.AstNodeKind.CONST_DECL:
+                    this.collectConstant(stmt);
+                    break;
+                case ast_1.AstNodeKind.IF_STMT:
+                    if (stmt.thenBlock) {
+                        this.collectStmts(stmt.thenBlock.stmts);
+                    }
+                    if (stmt.elseBlock) {
+                        this.collectStmts(stmt.elseBlock.stmts);
+                    }
+                    break;
+                case ast_1.AstNodeKind.WHILE_STMT:
+                    if (stmt.thenBlock) {
+                        this.collectStmts(stmt.thenBlock.stmts);
+                    }
+                    break;
+                case ast_1.AstNodeKind.FOR_STMT:
+                    if (stmt.thenBlock) {
+                        this.collectStmts(stmt.thenBlock.stmts);
+                    }
+                    break;
+                case ast_1.AstNodeKind.BLOCK:
+                    if (stmt.stmts) {
+                        this.collectStmts(stmt.stmts);
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
     }
     collectVariable(decl, currentNamespace) {
         if (!decl.varName) {
@@ -147,17 +233,21 @@ class SymbolTable {
         if (!decl.className) {
             return;
         }
+        const methods = this.collectMethods(decl.methods);
         const info = {
             name: decl.className,
             kind: 'class',
             fields: decl.fields,
-            methods: this.collectMethods(decl.methods),
+            methods,
             baseName: decl.baseName,
             line: decl.line,
             col: decl.col,
         };
         this.addType(decl.className, info);
         this.add(decl.className, info);
+        for (const method of methods) {
+            this.add(method.name, method);
+        }
     }
     collectNamespace(decl) {
         if (!decl.className) {

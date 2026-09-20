@@ -1025,6 +1025,8 @@ export class Parser {
 		let isOperator = false;
 		let funcName = '';
 		let opName = '';
+		let funcLine = line;
+		let funcCol = col;
 		if (this.match(TokenKind.OPERATOR)) {
 			isOperator = true;
 			funcName = 'operator' + TokenKind[this.cur.kind];
@@ -1037,6 +1039,8 @@ export class Parser {
 			}
 		} else if (this.cur.kind === TokenKind.IDENT) {
 			funcName = this.cur.lexeme;
+			funcLine = this.cur.line;
+			funcCol = this.cur.col;
 			this.advance();
 		} else if (this.cur.kind === TokenKind.LPAREN) {
 			funcName = returnType || 'constructor';
@@ -1047,7 +1051,7 @@ export class Parser {
 			this.errorExpected('function name');
 			return null;
 		}
-		const func = new AstNode(AstNodeKind.FUNC_DEF, line, col);
+		const func = new AstNode(AstNodeKind.FUNC_DEF, funcLine, funcCol);
 		func.funcName = funcName;
 		func.returnType = returnType;
 		func.isStatic = isStatic;

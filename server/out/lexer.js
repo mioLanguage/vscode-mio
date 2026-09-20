@@ -46,79 +46,7 @@ class Lexer {
         this.skippedRanges = [];
         this.errors = [];
         this.source = source;
-        this.collectMacros();
         this.tokenize();
-    }
-    collectMacros() {
-        const savedPos = this.pos;
-        const savedLine = this.line;
-        const savedCol = this.col;
-        while (this.pos < this.source.length) {
-            this.skipWhitespace();
-            if (this.cur() === '@') {
-                const start = this.pos;
-                this.advance();
-                let directive = '';
-                while (this.isAlnum(this.cur())) {
-                    directive += this.advance();
-                }
-                if (directive === 'macro') {
-                    while (this.cur() === ' ' || this.cur() === '\t' || this.cur() === '\r') {
-                        this.advance();
-                    }
-                    if (this.cur() !== '\0' && this.cur() !== '\n' && this.isAlpha(this.cur())) {
-                        let name = '';
-                        while (this.isAlnum(this.cur())) {
-                            name += this.advance();
-                        }
-                        while (this.cur() === ' ' || this.cur() === '\t' || this.cur() === '\r') {
-                            this.advance();
-                        }
-                        let value = '1';
-                        if (this.cur() !== '\0' && this.cur() !== '\n') {
-                            const vstart = this.pos;
-                            if (this.isAlpha(this.cur())) {
-                                while (this.isAlnum(this.cur())) {
-                                    this.advance();
-                                }
-                            }
-                            else if (this.isDigit(this.cur())) {
-                                while (this.isDigit(this.cur()) || this.cur() === '.') {
-                                    this.advance();
-                                }
-                            }
-                            else if (this.cur() === '"') {
-                                this.advance();
-                                while (this.cur() !== '"' && this.cur() !== '\0' && this.cur() !== '\n') {
-                                    this.advance();
-                                }
-                                if (this.cur() === '"') {
-                                    this.advance();
-                                }
-                            }
-                            const vlen = this.pos - vstart;
-                            if (vlen > 0) {
-                                value = this.source.substring(vstart, vstart + vlen);
-                            }
-                        }
-                        if (!this.macros.has(name)) {
-                            this.macros.set(name, value);
-                        }
-                    }
-                }
-            }
-            if (this.cur() !== '\n' && this.cur() !== '\0') {
-                while (this.cur() !== '\n' && this.cur() !== '\0') {
-                    this.advance();
-                }
-            }
-            if (this.cur() === '\n') {
-                this.advance();
-            }
-        }
-        this.pos = savedPos;
-        this.line = savedLine;
-        this.col = savedCol;
     }
     get peekToken() {
         if (this.tokenPos < this.tokens.length) {
@@ -136,19 +64,17 @@ class Lexer {
         return this.tokens[this.tokens.length - 1];
     }
     isTemplateInstantiation() {
-        const savedPos = this.tokenPos;
         if (this.tokenPos >= this.tokens.length) {
             return false;
         }
         const t1 = this.tokens[this.tokenPos];
-        if (t1.kind !== ast_1.TokenKind.DOLLAR) {
-            return false;
+        if (t1.kind === ast_1.TokenKind.DOLLAR) {
+            if (this.tokenPos + 1 >= this.tokens.length) {
+                return false;
+            }
+            return this.tokens[this.tokenPos + 1].kind === ast_1.TokenKind.LPAREN;
         }
-        if (this.tokenPos + 1 >= this.tokens.length) {
-            return false;
-        }
-        const t2 = this.tokens[this.tokenPos + 1];
-        return t2.kind === ast_1.TokenKind.LPAREN;
+        return true;
     }
     cur() {
         return this.pos < this.source.length ? this.source[this.pos] : '\0';
@@ -210,9 +136,9 @@ class Lexer {
     isMacroDefined(name) {
         return this.macros.has(name);
     }
-    addMacro(name, value) {
+    addMacro(name, value, line, col) {
         if (this.macros.has(name)) {
-            this.errors.push(`macro '${name}' is already defined`);
+            this.errors.push(`Line ${line}:${col}: macro '${name}' is already defined`);
             return;
         }
         this.macros.set(name, value);
@@ -238,11 +164,40 @@ class Lexer {
         const startCol = this.col;
         let text = '';
         let isFloat = false;
-        if (this.cur() === '0' && (this.peek() === 'x' || this.peek() === 'X')) {
-            text += this.advance();
-            text += this.advance();
-            while (this.isHexDigit(this.cur())) {
+        if (this.cur() === '0') {
+            const next = this.peek(1);
+            if (next === 'x' || next === 'X') {
                 text += this.advance();
+                text += this.advance();
+                while (this.isHexDigit(this.cur())) {
+                    text += this.advance();
+                }
+            }
+            else if (next === 'b' || next === 'B') {
+                text += this.advance();
+                text += this.advance();
+                while (this.cur() === '0' || this.cur() === '1') {
+                    text += this.advance();
+                }
+            }
+            else if (next === 'o' || next === 'O') {
+                text += this.advance();
+                text += this.advance();
+                while (this.cur() >= '0' && this.cur() <= '7') {
+                    text += this.advance();
+                }
+            }
+            else {
+                while (this.isDigit(this.cur())) {
+                    text += this.advance();
+                }
+                if (this.cur() === '.') {
+                    isFloat = true;
+                    text += this.advance();
+                    while (this.isDigit(this.cur())) {
+                        text += this.advance();
+                    }
+                }
             }
         }
         else {
@@ -262,8 +217,18 @@ class Lexer {
             token.floatVal = parseFloat(text);
         }
         else {
-            token.intVal = text.startsWith('0x') || text.startsWith('0X')
-                ? parseInt(text, 16) : parseInt(text, 10);
+            if (text.startsWith('0x') || text.startsWith('0X')) {
+                token.intVal = parseInt(text, 16);
+            }
+            else if (text.startsWith('0b') || text.startsWith('0B')) {
+                token.intVal = parseInt(text.substring(2), 2);
+            }
+            else if (text.startsWith('0o') || text.startsWith('0O')) {
+                token.intVal = parseInt(text.substring(2), 8);
+            }
+            else {
+                token.intVal = parseInt(text, 10);
+            }
         }
         return token;
     }
@@ -534,7 +499,7 @@ class Lexer {
                             value = this.source.substring(valStart, valStart + valLen);
                         }
                     }
-                    this.addMacro(name, value);
+                    this.addMacro(name, value, atLine, atCol);
                     continue;
                 }
                 case ast_1.TokenKind.EOF: {

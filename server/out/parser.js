@@ -1143,6 +1143,8 @@ class Parser {
         let isOperator = false;
         let funcName = '';
         let opName = '';
+        let funcLine = line;
+        let funcCol = col;
         if (this.match(ast_1.TokenKind.OPERATOR)) {
             isOperator = true;
             funcName = 'operator' + ast_1.TokenKind[this.cur.kind];
@@ -1157,6 +1159,8 @@ class Parser {
         }
         else if (this.cur.kind === ast_1.TokenKind.IDENT) {
             funcName = this.cur.lexeme;
+            funcLine = this.cur.line;
+            funcCol = this.cur.col;
             this.advance();
         }
         else if (this.cur.kind === ast_1.TokenKind.LPAREN) {
@@ -1170,7 +1174,7 @@ class Parser {
             this.errorExpected('function name');
             return null;
         }
-        const func = new ast_1.AstNode(ast_1.AstNodeKind.FUNC_DEF, line, col);
+        const func = new ast_1.AstNode(ast_1.AstNodeKind.FUNC_DEF, funcLine, funcCol);
         func.funcName = funcName;
         func.returnType = returnType;
         func.isStatic = isStatic;

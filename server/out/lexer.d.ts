@@ -23,7 +23,6 @@ export declare class Lexer {
     }[];
     errors: string[];
     constructor(source: string);
-    private collectMacros;
     get peekToken(): Token;
     getAllTokens(): Token[];
     nextToken(): Token;

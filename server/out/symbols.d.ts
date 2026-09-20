@@ -10,6 +10,7 @@ export interface SymbolInfo {
     variants?: Variant[];
     baseName?: string;
     parentName?: string;
+    filePath?: string;
     line: number;
     col: number;
 }
@@ -25,9 +26,12 @@ export declare class SymbolTable {
     getType(name: string): SymbolInfo | undefined;
     getAllSymbols(): SymbolInfo[];
     getAllTypes(): SymbolInfo[];
+    setFilePath(filePath: string): void;
+    mergeInto(target: SymbolTable): void;
     collectFromAst(ast: AstNode, currentNamespace?: string): void;
     private collectDecl;
     private collectFunction;
+    private collectStmts;
     private collectVariable;
     private collectConstant;
     private collectEnum;

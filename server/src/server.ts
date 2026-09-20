@@ -26,6 +26,7 @@ import { SymbolTable, SymbolInfo } from './symbols';
 import { AstNodeKind, TokenKind } from './ast';
 import * as fs from 'fs';
 import * as path from 'path';
+import { pathToFileURL } from 'url';
 import { globSync } from 'glob';
 
 const connection = createConnection(ProposedFeatures.all);
@@ -76,13 +77,23 @@ function loadHeaderFiles(includePaths: string[], workspaceRoot?: string): void {
 		try {
 			if (!fs.existsSync(searchPath)) continue;
 			const files = globSync('**/*.mio', { cwd: searchPath });
+			connection.console.log(`loadHeaderFiles: found ${files.length} .mio files in ${searchPath}`);
 			for (const file of files) {
 				const filePath = path.join(searchPath, file);
 				try {
 					const content = fs.readFileSync(filePath, 'utf-8');
 					const parser = new Parser(content);
 					const ast = parser.parse();
-					headerSymbols.collectFromAst(ast);
+					const errors = parser.getErrors();
+					connection.console.log(`loadHeaderFiles: ${file} has ${ast.decls.length} decls, ${errors.length} errors`);
+					for (const e of errors.slice(0, 5)) {
+						connection.console.log(`loadHeaderFiles: ${file} error: ${e}`);
+					}
+					const fileSymbols = new SymbolTable();
+					fileSymbols.collectFromAst(ast);
+					connection.console.log(`loadHeaderFiles: ${file} collected ${fileSymbols.symbols.size} symbols, ${fileSymbols.types.size} types, ${fileSymbols.namespaces.size} namespaces`);
+					fileSymbols.setFilePath(filePath);
+					fileSymbols.mergeInto(headerSymbols);
 				} catch {
 					// skip unreadable files
 				}
@@ -91,6 +102,7 @@ function loadHeaderFiles(includePaths: string[], workspaceRoot?: string): void {
 			// skip invalid paths
 		}
 	}
+	connection.console.log(`loadHeaderFiles: total header symbols=${headerSymbols.symbols.size}, types=${headerSymbols.types.size}`);
 }
 
 async function getWorkspaceRoot(): Promise<string | undefined> {
@@ -325,6 +337,7 @@ function parseDocument(text: string): { symbols: SymbolTable; errors: string[]; 
 	const ast = parser.parse();
 	const symbols = new SymbolTable();
 	symbols.collectFromAst(ast);
+	connection.console.log(`parseDocument: ${ast.decls.length} decls, ${symbols.symbols.size} symbols, ${symbols.types.size} types`);
 	return { symbols, errors: parser.getErrors(), skippedRanges: parser.getSkippedRanges() };
 }
 
@@ -375,6 +388,24 @@ function getSymbolDetail(sym: SymbolInfo): string {
 		default:
 			return sym.name;
 	}
+}
+
+function getWordAtPosition(document: TextDocument, position: Position): string | null {
+	const lineStart = { line: position.line, character: 0 };
+	const lineEnd = { line: position.line + 1, character: 0 };
+	const fullLine = document.getText({ start: lineStart, end: lineEnd });
+	const lineText = fullLine.replace(/\r?\n$/, '');
+
+	let start = Math.min(position.character, lineText.length);
+	let end = start;
+	while (start > 0 && /\w/.test(lineText[start - 1])) {
+		start--;
+	}
+	while (end < lineText.length && /\w/.test(lineText[end])) {
+		end++;
+	}
+	const word = lineText.substring(start, end);
+	return word || null;
 }
 
 documents.onDidChangeContent(change => {
@@ -650,19 +681,10 @@ connection.onHover(
 		const { symbols } = parseDocument(text);
 
 		const position = params.position;
-		const range = {
-			start: { line: position.line, character: 0 },
-			end: { line: position.line, character: position.character },
-		};
-		const line = document.getText(range);
-
-		// Try to find the word at the cursor position
-		const wordMatch = line.match(/(\w+)\s*$/);
-		if (!wordMatch) {
+		const word = getWordAtPosition(document, position);
+		if (!word) {
 			return null;
 		}
-
-		const word = wordMatch[1];
 
 		// Check if it's a type keyword
 		const typeItems: Record<string, string> = {
@@ -716,51 +738,56 @@ connection.onHover(
 
 connection.onDefinition(
 	async (params: TextDocumentPositionParams): Promise<Definition | null> => {
-		const document = documents.get(params.textDocument.uri);
-		if (!document) {
+		try {
+			const document = documents.get(params.textDocument.uri);
+			if (!document) {
+				connection.console.log('onDefinition: document not found');
+				return null;
+			}
+
+			const text = document.getText();
+			const { symbols } = parseDocument(text);
+
+			const position = params.position;
+			const word = getWordAtPosition(document, position);
+			connection.console.log(`onDefinition: word='${word}' at line=${position.line} char=${position.character}`);
+			if (!word) {
+				return null;
+			}
+
+			let sym = symbols.get(word) || symbols.getType(word);
+			connection.console.log(`onDefinition: sym=${sym ? sym.name + ' ' + sym.kind : 'null'}`);
+			if (sym) {
+				return {
+					uri: params.textDocument.uri,
+					range: {
+						start: { line: sym.line - 1, character: sym.col - 1 },
+						end: { line: sym.line - 1, character: sym.col + sym.name.length - 1 },
+					},
+				};
+			}
+
+			const headerSym = headerSymbols.get(word) || headerSymbols.getType(word);
+			connection.console.log(`onDefinition: headerSym=${headerSym ? headerSym.name + ' ' + headerSym.kind : 'null'}`);
+			if (headerSym) {
+				const uri = headerSym.filePath
+					? pathToFileURL(headerSym.filePath).toString()
+					: params.textDocument.uri;
+				connection.console.log(`onDefinition: returning uri=${uri} line=${headerSym.line} col=${headerSym.col} filePath=${headerSym.filePath}`);
+				return {
+					uri,
+					range: {
+						start: { line: headerSym.line - 1, character: headerSym.col - 1 },
+						end: { line: headerSym.line - 1, character: headerSym.col + headerSym.name.length - 1 },
+					},
+				};
+			}
+
+			return null;
+		} catch (e: any) {
+			connection.console.log(`onDefinition error: ${e.message || e}`);
 			return null;
 		}
-
-		const text = document.getText();
-		const { symbols } = parseDocument(text);
-
-		const position = params.position;
-		const range = {
-			start: { line: position.line, character: 0 },
-			end: { line: position.line, character: position.character },
-		};
-		const line = document.getText(range);
-
-		const wordMatch = line.match(/(\w+)\s*$/);
-		if (!wordMatch) {
-			return null;
-		}
-
-		const word = wordMatch[1];
-		let sym = symbols.get(word) || symbols.getType(word);
-		if (sym) {
-			return {
-				uri: params.textDocument.uri,
-				range: {
-					start: { line: sym.line - 1, character: sym.col - 1 },
-					end: { line: sym.line - 1, character: sym.col + sym.name.length - 1 },
-				},
-			};
-		}
-
-		// Check header symbols
-		const headerSym = headerSymbols.get(word) || headerSymbols.getType(word);
-		if (headerSym) {
-			return {
-				uri: params.textDocument.uri,
-				range: {
-					start: { line: headerSym.line - 1, character: headerSym.col - 1 },
-					end: { line: headerSym.line - 1, character: headerSym.col + headerSym.name.length - 1 },
-				},
-			};
-		}
-
-		return null;
 	}
 );
 
