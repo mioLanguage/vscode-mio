@@ -189,8 +189,24 @@ class Parser {
             }
             case ast_1.TokenKind.VAR:
                 return this.parseVarDecl(false, false);
-            case ast_1.TokenKind.CONST:
-                return this.parseVarDecl(true, false);
+            case ast_1.TokenKind.CONST: {
+                this.advance();
+                const peek = this.lexer.peekToken;
+                if (this.cur.kind === ast_1.TokenKind.IDENT && (peek.kind === ast_1.TokenKind.COLON || peek.kind === ast_1.TokenKind.ASSIGN ||
+                    peek.kind === ast_1.TokenKind.COMMA || peek.kind === ast_1.TokenKind.SEMICOLON)) {
+                    return this.parseVarDecl(true, false, false, true);
+                }
+                const retType = this.parseType();
+                const constRet = 'const ' + retType;
+                if (this.cur.kind === ast_1.TokenKind.IDENT) {
+                    const tmpFn = new ast_1.AstNode(ast_1.AstNodeKind.FUNC_DEF, this.cur.line, this.cur.col);
+                    tmpFn.returnType = constRet;
+                    tmpFn.funcName = '';
+                    return this.parseFuncDefRest(tmpFn);
+                }
+                this.error("expected function name after 'const' return type");
+                return null;
+            }
             case ast_1.TokenKind.STATIC: {
                 this.advance();
                 if (this.match(ast_1.TokenKind.VAR)) {
@@ -336,7 +352,13 @@ class Parser {
                     if (this.match(ast_1.TokenKind.DOLLAR)) {
                         result += '$';
                         do {
-                            result += this.parseType();
+                            if (this.isTypeToken(this.cur.kind)) {
+                                result += this.parseType();
+                            }
+                            else {
+                                const val = this.parseExpr();
+                                result += val ? val.typeName || 'expr' : 'expr';
+                            }
                         } while (this.match(ast_1.TokenKind.COMMA));
                         if (!this.match(ast_1.TokenKind.DOLLAR)) {
                             this.errorExpected("'$'");
@@ -349,7 +371,13 @@ class Parser {
                 if (this.match(ast_1.TokenKind.DOLLAR)) {
                     result += '$';
                     do {
-                        result += this.parseType();
+                        if (this.isTypeToken(this.cur.kind)) {
+                            result += this.parseType();
+                        }
+                        else {
+                            const val = this.parseExpr();
+                            result += val ? val.typeName || 'expr' : 'expr';
+                        }
                     } while (this.match(ast_1.TokenKind.COMMA));
                     if (!this.match(ast_1.TokenKind.DOLLAR)) {
                         this.errorExpected("'$'");
@@ -382,6 +410,10 @@ class Parser {
         if (this.match(ast_1.TokenKind.AND)) {
             const base = this.parseTypePrefix();
             return '&&' + base;
+        }
+        if (this.match(ast_1.TokenKind.CONST)) {
+            const base = this.parseTypePrefix();
+            return 'const ' + base;
         }
         return this.parseBaseTypeWithSuffix();
     }
@@ -1153,6 +1185,12 @@ class Parser {
                 this.advance();
                 this.expect(ast_1.TokenKind.RBRACKET);
             }
+            else if (this.cur.kind === ast_1.TokenKind.LPAREN) {
+                funcName = 'operator()';
+                opName = '';
+                this.advance();
+                this.expect(ast_1.TokenKind.RPAREN);
+            }
             else {
                 this.advance();
             }
@@ -1183,6 +1221,9 @@ class Parser {
         if (isOperator) {
             func.opName = opName;
         }
+        return this.parseFuncDefRest(func);
+    }
+    parseFuncDefRest(func) {
         this.expect(ast_1.TokenKind.LPAREN);
         if (!this.check(ast_1.TokenKind.RPAREN)) {
             do {
@@ -1220,7 +1261,7 @@ class Parser {
                 this.error("expected '0' after '=' for pure virtual function");
             }
         }
-        if (!isOperator && !func.isPureVirtual && this.match(ast_1.TokenKind.COLON)) {
+        if (!func.isOperator && !func.isPureVirtual && this.match(ast_1.TokenKind.COLON)) {
             func.initList = [];
             while (!this.check(ast_1.TokenKind.LBRACE) && !this.check(ast_1.TokenKind.SEMICOLON) && !this.check(ast_1.TokenKind.EOF)) {
                 if (this.cur.kind === ast_1.TokenKind.IDENT) {
@@ -1248,7 +1289,7 @@ class Parser {
                 }
             }
         }
-        if (isExtern || func.isPureVirtual) {
+        if (func.isExtern || func.isPureVirtual) {
             this.expect(ast_1.TokenKind.SEMICOLON);
         }
         else {
@@ -1475,7 +1516,7 @@ class Parser {
                         c.nestedClasses.push(nested);
                     }
                 }
-                else if (this.isTypeToken(this.cur.kind)) {
+                else if (this.cur.kind === ast_1.TokenKind.OPERATOR || this.isTypeToken(this.cur.kind)) {
                     if (this.cur.kind === ast_1.TokenKind.IDENT && this.lexer.peekToken?.kind === ast_1.TokenKind.COLON) {
                         const fname = this.cur.lexeme;
                         this.advance();
@@ -1603,7 +1644,9 @@ class Parser {
             this.errorExpected("'$' after template parameters");
             return null;
         }
+        const savedClassNames = new Set(this.classNames);
         const def = this.parseDecl();
+        this.classNames = savedClassNames;
         if (!def) {
             this.error('expected declaration after template');
             return null;

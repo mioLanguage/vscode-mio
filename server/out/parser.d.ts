@@ -57,6 +57,7 @@ export declare class Parser {
     private parseReturnStmt;
     private parseStmt;
     private parseFuncDef;
+    private parseFuncDefRest;
     private parseEnumDef;
     private parseUnionDef;
     private parseClassDef;

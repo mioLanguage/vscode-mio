@@ -144,8 +144,25 @@ export class Parser {
 			}
 			case TokenKind.VAR:
 				return this.parseVarDecl(false, false);
-			case TokenKind.CONST:
-				return this.parseVarDecl(true, false);
+			case TokenKind.CONST: {
+				this.advance();
+				const peek = this.lexer.peekToken;
+				if ((this.cur.kind as number) === (TokenKind.IDENT as number) && (
+					peek.kind === TokenKind.COLON || peek.kind === TokenKind.ASSIGN ||
+					peek.kind === TokenKind.COMMA || peek.kind === TokenKind.SEMICOLON)) {
+					return this.parseVarDecl(true, false, false, true);
+				}
+				const retType = this.parseType();
+				const constRet = 'const ' + retType;
+				if ((this.cur.kind as number) === (TokenKind.IDENT as number)) {
+					const tmpFn = new AstNode(AstNodeKind.FUNC_DEF, this.cur.line, this.cur.col);
+					tmpFn.returnType = constRet;
+					tmpFn.funcName = '';
+					return this.parseFuncDefRest(tmpFn);
+				}
+				this.error("expected function name after 'const' return type");
+				return null;
+			}
 			case TokenKind.STATIC: {
 				this.advance();
 				if (this.match(TokenKind.VAR)) {
@@ -255,7 +272,12 @@ export class Parser {
 					if (this.match(TokenKind.DOLLAR)) {
 						result += '$';
 						do {
-							result += this.parseType();
+							if (this.isTypeToken(this.cur.kind)) {
+								result += this.parseType();
+							} else {
+								const val = this.parseExpr();
+								result += val ? val.typeName || 'expr' : 'expr';
+							}
 						} while (this.match(TokenKind.COMMA));
 						if (!this.match(TokenKind.DOLLAR)) {
 							this.errorExpected("'$'");
@@ -268,7 +290,12 @@ export class Parser {
 				if (this.match(TokenKind.DOLLAR)) {
 					result += '$';
 					do {
-						result += this.parseType();
+						if (this.isTypeToken(this.cur.kind)) {
+							result += this.parseType();
+						} else {
+							const val = this.parseExpr();
+							result += val ? val.typeName || 'expr' : 'expr';
+						}
 					} while (this.match(TokenKind.COMMA));
 					if (!this.match(TokenKind.DOLLAR)) {
 						this.errorExpected("'$'");
@@ -303,6 +330,10 @@ export class Parser {
 		if (this.match(TokenKind.AND)) {
 			const base = this.parseTypePrefix();
 			return '&&' + base;
+		}
+		if (this.match(TokenKind.CONST)) {
+			const base = this.parseTypePrefix();
+			return 'const ' + base;
 		}
 		return this.parseBaseTypeWithSuffix();
 	}
@@ -1034,6 +1065,11 @@ export class Parser {
 			if (this.cur.kind === TokenKind.LBRACKET) {
 				this.advance();
 				this.expect(TokenKind.RBRACKET);
+			} else if (this.cur.kind === TokenKind.LPAREN) {
+				funcName = 'operator()';
+				opName = '';
+				this.advance();
+				this.expect(TokenKind.RPAREN);
 			} else {
 				this.advance();
 			}
@@ -1058,6 +1094,10 @@ export class Parser {
 		func.isExtern = isExtern;
 		func.isOperator = isOperator;
 		if (isOperator) { func.opName = opName; }
+		return this.parseFuncDefRest(func);
+	}
+
+	private parseFuncDefRest(func: AstNode): AstNode {
 		this.expect(TokenKind.LPAREN);
 		if (!this.check(TokenKind.RPAREN)) {
 			do {
@@ -1092,7 +1132,7 @@ export class Parser {
 				this.error("expected '0' after '=' for pure virtual function");
 			}
 		}
-		if (!isOperator && !func.isPureVirtual && this.match(TokenKind.COLON)) {
+		if (!func.isOperator && !func.isPureVirtual && this.match(TokenKind.COLON)) {
 			func.initList = [];
 			while (!this.check(TokenKind.LBRACE) && !this.check(TokenKind.SEMICOLON) && !this.check(TokenKind.EOF)) {
 				if (this.cur.kind === TokenKind.IDENT) {
@@ -1115,7 +1155,7 @@ export class Parser {
 				if (!this.match(TokenKind.COMMA)) { break; }
 			}
 		}
-		if (isExtern || func.isPureVirtual) {
+		if (func.isExtern || func.isPureVirtual) {
 			this.expect(TokenKind.SEMICOLON);
 		} else {
 			func.body = this.parseBlock();
@@ -1304,7 +1344,7 @@ export class Parser {
 						}
 						c.nestedClasses.push(nested);
 					}
-				} else if (this.isTypeToken(this.cur.kind)) {
+				} else if (this.cur.kind === (TokenKind.OPERATOR as TokenKind) || this.isTypeToken(this.cur.kind)) {
 					if (this.cur.kind === TokenKind.IDENT && this.lexer.peekToken?.kind === TokenKind.COLON) {
 						const fname = this.cur.lexeme;
 						this.advance();
@@ -1419,7 +1459,9 @@ export class Parser {
 			this.errorExpected("'$' after template parameters");
 			return null;
 		}
+		const savedClassNames = new Set(this.classNames);
 		const def = this.parseDecl();
+		this.classNames = savedClassNames;
 		if (!def) {
 			this.error('expected declaration after template');
 			return null;
