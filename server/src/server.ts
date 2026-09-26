@@ -77,21 +77,14 @@ function loadHeaderFiles(includePaths: string[], workspaceRoot?: string): void {
 		try {
 			if (!fs.existsSync(searchPath)) continue;
 			const files = globSync('**/*.mio', { cwd: searchPath });
-			connection.console.log(`loadHeaderFiles: found ${files.length} .mio files in ${searchPath}`);
 			for (const file of files) {
 				const filePath = path.join(searchPath, file);
 				try {
 					const content = fs.readFileSync(filePath, 'utf-8');
 					const parser = new Parser(content);
 					const ast = parser.parse();
-					const errors = parser.getErrors();
-					connection.console.log(`loadHeaderFiles: ${file} has ${ast.decls.length} decls, ${errors.length} errors`);
-					for (const e of errors.slice(0, 5)) {
-						connection.console.log(`loadHeaderFiles: ${file} error: ${e}`);
-					}
 					const fileSymbols = new SymbolTable();
 					fileSymbols.collectFromAst(ast);
-					connection.console.log(`loadHeaderFiles: ${file} collected ${fileSymbols.symbols.size} symbols, ${fileSymbols.types.size} types, ${fileSymbols.namespaces.size} namespaces`);
 					fileSymbols.setFilePath(filePath);
 					fileSymbols.mergeInto(headerSymbols);
 				} catch {
@@ -102,7 +95,7 @@ function loadHeaderFiles(includePaths: string[], workspaceRoot?: string): void {
 			// skip invalid paths
 		}
 	}
-	connection.console.log(`loadHeaderFiles: total header symbols=${headerSymbols.symbols.size}, types=${headerSymbols.types.size}`);
+	connection.console.log(`header symbols: ${headerSymbols.symbols.size} total`);
 }
 
 async function getWorkspaceRoot(): Promise<string | undefined> {
@@ -152,7 +145,7 @@ connection.onInitialized(() => {
 	}
 	if (hasWorkspaceFolderCapability) {
 		connection.workspace.onDidChangeWorkspaceFolders(() => {
-			connection.console.log('Workspace folder change event received.');
+			// folders changed, config will reload
 		});
 	}
 	// Load initial settings
@@ -337,7 +330,6 @@ function parseDocument(text: string): { symbols: SymbolTable; errors: string[]; 
 	const ast = parser.parse();
 	const symbols = new SymbolTable();
 	symbols.collectFromAst(ast);
-	connection.console.log(`parseDocument: ${ast.decls.length} decls, ${symbols.symbols.size} symbols, ${symbols.types.size} types`);
 	return { symbols, errors: parser.getErrors(), skippedRanges: parser.getSkippedRanges() };
 }
 
@@ -741,7 +733,6 @@ connection.onDefinition(
 		try {
 			const document = documents.get(params.textDocument.uri);
 			if (!document) {
-				connection.console.log('onDefinition: document not found');
 				return null;
 			}
 
@@ -750,13 +741,11 @@ connection.onDefinition(
 
 			const position = params.position;
 			const word = getWordAtPosition(document, position);
-			connection.console.log(`onDefinition: word='${word}' at line=${position.line} char=${position.character}`);
 			if (!word) {
 				return null;
 			}
 
 			let sym = symbols.get(word) || symbols.getType(word);
-			connection.console.log(`onDefinition: sym=${sym ? sym.name + ' ' + sym.kind : 'null'}`);
 			if (sym) {
 				return {
 					uri: params.textDocument.uri,
@@ -768,12 +757,10 @@ connection.onDefinition(
 			}
 
 			const headerSym = headerSymbols.get(word) || headerSymbols.getType(word);
-			connection.console.log(`onDefinition: headerSym=${headerSym ? headerSym.name + ' ' + headerSym.kind : 'null'}`);
 			if (headerSym) {
 				const uri = headerSym.filePath
 					? pathToFileURL(headerSym.filePath).toString()
 					: params.textDocument.uri;
-				connection.console.log(`onDefinition: returning uri=${uri} line=${headerSym.line} col=${headerSym.col} filePath=${headerSym.filePath}`);
 				return {
 					uri,
 					range: {
@@ -784,8 +771,7 @@ connection.onDefinition(
 			}
 
 			return null;
-		} catch (e: any) {
-			connection.console.log(`onDefinition error: ${e.message || e}`);
+		} catch {
 			return null;
 		}
 	}
