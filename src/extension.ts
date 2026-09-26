@@ -22,7 +22,6 @@ export function activate(context: ExtensionContext) {
 		debug: {
 			module: serverModule,
 			transport: TransportKind.ipc,
-			options: { execArgv: ['--nolazy', '--inspect=6009'] },
 		},
 	};
 

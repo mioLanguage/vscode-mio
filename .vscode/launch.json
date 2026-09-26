@@ -6,11 +6,16 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
-			"name": "Extension",
+			"name": "Launch Extension",
 			"type": "extensionHost",
 			"request": "launch",
+			"stopOnEntry": false,
 			"args": [
+				"--disable-extensions",
 				"--extensionDevelopmentPath=${workspaceFolder}"
+			],
+			"outFiles": [
+				"${workspaceFolder}/out/**/*.js"
 			]
 		}
 	]

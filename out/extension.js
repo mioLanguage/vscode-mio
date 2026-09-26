@@ -48,7 +48,6 @@ function activate(context) {
         debug: {
             module: serverModule,
             transport: node_1.TransportKind.ipc,
-            options: { execArgv: ['--nolazy', '--inspect=6009'] },
         },
     };
     const clientOptions = {

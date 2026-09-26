@@ -85,17 +85,22 @@ export class Lexer {
 	}
 
 	isTemplateInstantiation(): boolean {
-		if (this.tokenPos >= this.tokens.length) {
-			return false;
-		}
-		const t1 = this.tokens[this.tokenPos];
-		if (t1.kind === TokenKind.DOLLAR) {
-			if (this.tokenPos + 1 >= this.tokens.length) {
-				return false;
+		let depth = 1;
+		let i = this.tokenPos;
+		while (depth > 0 && i < this.tokens.length) {
+			const t = this.tokens[i];
+			if (t.kind === TokenKind.DOLLAR) {
+				depth--;
+				if (depth === 0) {
+					return (i + 1 < this.tokens.length) &&
+						this.tokens[i + 1].kind === TokenKind.LPAREN;
+				}
+			} else if (t.kind === TokenKind.EOF) {
+				break;
 			}
-			return this.tokens[this.tokenPos + 1].kind === TokenKind.LPAREN;
+			i++;
 		}
-		return true;
+		return false;
 	}
 
 	private cur(): string {
