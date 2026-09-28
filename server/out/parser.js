@@ -10,6 +10,10 @@ class Parser {
         this.classBaseMap = new Map();
         this.classVirtualMethods = new Map();
         this.classMethodNames = new Map();
+        this.loopDepth = 0;
+        this.funcLabels = new Set();
+        this.funcReturnType = null;
+        this.funcHasReturn = false;
         this.lexer = new lexer_1.Lexer(source);
         this.cur = this.lexer.nextToken();
     }
@@ -124,6 +128,7 @@ class Parser {
             case ast_1.TokenKind.IDENT:
             case ast_1.TokenKind.STAR:
             case ast_1.TokenKind.BIT_AND:
+            case ast_1.TokenKind.LPAREN:
                 return true;
             default: return false;
         }
@@ -227,6 +232,8 @@ class Parser {
                 return this.parseNamespaceDef();
             case ast_1.TokenKind.TEMPLATE:
                 return this.parseTemplateDef();
+            case ast_1.TokenKind.TYPENAME:
+                return this.parseTypeAlias();
             case ast_1.TokenKind.EOF:
                 return null;
             default: {
@@ -392,6 +399,20 @@ class Parser {
         }
     }
     parseType() {
+        if (this.check(ast_1.TokenKind.LPAREN)) {
+            this.advance();
+            let funcStr = '(';
+            const params = [];
+            if (!this.check(ast_1.TokenKind.RPAREN)) {
+                do {
+                    params.push(this.parseType());
+                } while (this.match(ast_1.TokenKind.COMMA));
+            }
+            this.expect(ast_1.TokenKind.RPAREN);
+            funcStr += params.join(',') + ')';
+            const ret = this.parseType();
+            return funcStr + ret;
+        }
         return this.parseTypePrefix();
     }
     parseTypePrefix() {
@@ -719,6 +740,20 @@ class Parser {
                 this.advance();
                 expr = memNode;
             }
+            else if (this.cur.kind === ast_1.TokenKind.IDENT) {
+                if (expr.kind === ast_1.AstNodeKind.INT_LIT || expr.kind === ast_1.AstNodeKind.FLOAT_LIT ||
+                    expr.kind === ast_1.AstNodeKind.STRING_LIT || expr.kind === ast_1.AstNodeKind.CHAR_LIT) {
+                    const suffix = this.cur.lexeme;
+                    this.advance();
+                    const litOp = new ast_1.AstNode(ast_1.AstNodeKind.LITERAL_OP_EXPR, expr.line, expr.col);
+                    litOp.operand = expr;
+                    litOp.literalSuffix = suffix;
+                    expr = litOp;
+                }
+                else {
+                    break;
+                }
+            }
             else {
                 break;
             }
@@ -1025,13 +1060,16 @@ class Parser {
         this.expect(ast_1.TokenKind.LPAREN);
         const cond = this.parseExpr();
         this.expect(ast_1.TokenKind.RPAREN);
+        this.loopDepth++;
         if (this.check(ast_1.TokenKind.RBRACE)) {
             this.error("expected statement after 'while'");
             const node = new ast_1.AstNode(ast_1.AstNodeKind.WHILE_STMT, line, col);
             node.condition = cond;
+            this.loopDepth--;
             return node;
         }
         const body = this.parseStmt();
+        this.loopDepth--;
         const node = new ast_1.AstNode(ast_1.AstNodeKind.WHILE_STMT, line, col);
         node.condition = cond;
         node.thenBlock = body || undefined;
@@ -1063,15 +1101,18 @@ class Parser {
             update = this.parseExpr();
         }
         this.expect(ast_1.TokenKind.RPAREN);
+        this.loopDepth++;
         if (this.check(ast_1.TokenKind.RBRACE)) {
             this.error("expected statement after 'for'");
             const node = new ast_1.AstNode(ast_1.AstNodeKind.FOR_STMT, line, col);
             node.forInit = init;
             node.condition = cond;
             node.forUpdate = update;
+            this.loopDepth--;
             return node;
         }
         const body = this.parseStmt();
+        this.loopDepth--;
         const node = new ast_1.AstNode(ast_1.AstNodeKind.FOR_STMT, line, col);
         node.forInit = init;
         node.condition = cond;
@@ -1088,6 +1129,13 @@ class Parser {
             value = this.parseExpr();
         }
         this.expect(ast_1.TokenKind.SEMICOLON);
+        this.funcHasReturn = true;
+        if (this.funcReturnType === 'void' && value) {
+            this.error("void function cannot return a value");
+        }
+        if (this.funcReturnType && this.funcReturnType !== 'void' && !value) {
+            this.error("non-void function must return a value");
+        }
         const node = new ast_1.AstNode(ast_1.AstNodeKind.RETURN_STMT, line, col);
         node.returnExpr = value;
         return node;
@@ -1106,10 +1154,16 @@ class Parser {
                 return this.parseForStmt();
             case ast_1.TokenKind.BREAK:
                 this.advance();
+                if (this.loopDepth === 0) {
+                    this.error("break statement not within a loop");
+                }
                 this.expect(ast_1.TokenKind.SEMICOLON);
                 return new ast_1.AstNode(ast_1.AstNodeKind.BREAK_STMT, this.cur.line, this.cur.col);
             case ast_1.TokenKind.CONTINUE:
                 this.advance();
+                if (this.loopDepth === 0) {
+                    this.error("continue statement not within a loop");
+                }
                 this.expect(ast_1.TokenKind.SEMICOLON);
                 return new ast_1.AstNode(ast_1.AstNodeKind.CONTINUE_STMT, this.cur.line, this.cur.col);
             case ast_1.TokenKind.GOTO: {
@@ -1122,6 +1176,9 @@ class Parser {
                     return null;
                 }
                 this.expect(ast_1.TokenKind.SEMICOLON);
+                if (this.funcLabels && !this.funcLabels.has(label)) {
+                    this.errors.push(`Line ${line}:${col}: goto target label '${label}' not found in current function`);
+                }
                 const node = new ast_1.AstNode(ast_1.AstNodeKind.GOTO_STMT, line, col);
                 node.labelName = label;
                 return node;
@@ -1133,6 +1190,12 @@ class Parser {
                 const label = this.cur.lexeme;
                 if (!this.expectIdent()) {
                     return null;
+                }
+                if (this.funcLabels.has(label)) {
+                    this.errors.push(`Line ${line}:${col}: duplicate label '${label}'`);
+                }
+                else {
+                    this.funcLabels.add(label);
                 }
                 const node = new ast_1.AstNode(ast_1.AstNodeKind.LABEL_STMT, line, col);
                 node.labelName = label;
@@ -1173,26 +1236,42 @@ class Parser {
             returnType = this.parseType();
         }
         let isOperator = false;
+        let isLiteralOperator = false;
+        let literalSuffix = '';
         let funcName = '';
         let opName = '';
         let funcLine = line;
         let funcCol = col;
         if (this.match(ast_1.TokenKind.OPERATOR)) {
-            isOperator = true;
-            funcName = 'operator' + ast_1.TokenKind[this.cur.kind];
-            opName = ast_1.TokenKind[this.cur.kind];
-            if (this.cur.kind === ast_1.TokenKind.LBRACKET) {
+            if (this.cur.kind === ast_1.TokenKind.STRING_LIT && this.cur.lexeme === '') {
+                isLiteralOperator = true;
                 this.advance();
-                this.expect(ast_1.TokenKind.RBRACKET);
-            }
-            else if (this.cur.kind === ast_1.TokenKind.LPAREN) {
-                funcName = 'operator()';
-                opName = '';
+                if (this.cur.kind !== ast_1.TokenKind.IDENT) {
+                    this.error("expected identifier for literal operator suffix");
+                    return null;
+                }
+                literalSuffix = this.cur.lexeme;
+                funcName = 'operator""' + literalSuffix;
+                opName = literalSuffix;
                 this.advance();
-                this.expect(ast_1.TokenKind.RPAREN);
             }
             else {
-                this.advance();
+                isOperator = true;
+                funcName = 'operator' + ast_1.TokenKind[this.cur.kind];
+                opName = ast_1.TokenKind[this.cur.kind];
+                if (this.cur.kind === ast_1.TokenKind.LBRACKET) {
+                    this.advance();
+                    this.expect(ast_1.TokenKind.RBRACKET);
+                }
+                else if (this.cur.kind === ast_1.TokenKind.LPAREN) {
+                    funcName = 'operator()';
+                    opName = '';
+                    this.advance();
+                    this.expect(ast_1.TokenKind.RPAREN);
+                }
+                else {
+                    this.advance();
+                }
             }
         }
         else if (this.cur.kind === ast_1.TokenKind.IDENT) {
@@ -1218,8 +1297,12 @@ class Parser {
         func.isStatic = isStatic;
         func.isExtern = isExtern;
         func.isOperator = isOperator;
+        func.isLiteralOperator = isLiteralOperator;
         if (isOperator) {
             func.opName = opName;
+        }
+        if (isLiteralOperator) {
+            func.literalSuffix = literalSuffix;
         }
         return this.parseFuncDefRest(func);
     }
@@ -1293,9 +1376,49 @@ class Parser {
             this.expect(ast_1.TokenKind.SEMICOLON);
         }
         else {
+            const savedLoopDepth = this.loopDepth;
+            const savedLabels = this.funcLabels;
+            const savedReturnType = this.funcReturnType;
+            const savedHasReturn = this.funcHasReturn;
+            this.loopDepth = 0;
+            this.funcLabels = new Set();
+            this.funcReturnType = func.returnType || null;
+            this.funcHasReturn = false;
             func.body = this.parseBlock();
+            if (this.funcReturnType && this.funcReturnType !== 'void' && !this.funcHasReturn) {
+                const isDtor = func.funcName && func.funcName.startsWith('~');
+                const isCtor = func.funcName && (func.funcName === func.className);
+                if (!isDtor && !isCtor) {
+                    this.errors.push(`Line ${func.line}:${func.col}: non-void function '${func.funcName}' does not return a value`);
+                }
+            }
+            this.loopDepth = savedLoopDepth;
+            this.funcLabels = savedLabels;
+            this.funcReturnType = savedReturnType;
+            this.funcHasReturn = savedHasReturn;
         }
         return func;
+    }
+    parseTypeAlias(skipAdvance = false) {
+        if (!skipAdvance) {
+            this.advance();
+        }
+        const line = this.cur.line, col = this.cur.col;
+        const name = this.cur.lexeme;
+        if (!this.expectIdent()) {
+            return null;
+        }
+        this.expect(ast_1.TokenKind.ASSIGN);
+        const aliased = this.parseType();
+        if (!aliased) {
+            this.error("expected type after '=' in typename alias");
+            return null;
+        }
+        this.expect(ast_1.TokenKind.SEMICOLON);
+        const node = new ast_1.AstNode(ast_1.AstNodeKind.TYPE_ALIAS, line, col);
+        node.aliasName = name;
+        node.aliasedType = aliased;
+        return node;
     }
     parseEnumDef() {
         const line = this.cur.line;
@@ -1514,6 +1637,12 @@ class Parser {
                             nested.className = name + '::' + nestedName;
                         }
                         c.nestedClasses.push(nested);
+                    }
+                }
+                else if (this.match(ast_1.TokenKind.TYPENAME)) {
+                    const ta = this.parseTypeAlias(true);
+                    if (ta) {
+                        c.nestedClasses.push(ta);
                     }
                 }
                 else if (this.cur.kind === ast_1.TokenKind.OPERATOR || this.isTypeToken(this.cur.kind)) {

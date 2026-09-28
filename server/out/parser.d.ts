@@ -7,6 +7,10 @@ export declare class Parser {
     private classBaseMap;
     private classVirtualMethods;
     private classMethodNames;
+    private loopDepth;
+    private funcLabels;
+    private funcReturnType;
+    private funcHasReturn;
     constructor(source: string);
     getErrors(): string[];
     getSkippedRanges(): {
@@ -58,6 +62,7 @@ export declare class Parser {
     private parseStmt;
     private parseFuncDef;
     private parseFuncDefRest;
+    private parseTypeAlias;
     private parseEnumDef;
     private parseUnionDef;
     private parseClassDef;

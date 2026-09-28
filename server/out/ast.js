@@ -180,6 +180,8 @@ var AstNodeKind;
     AstNodeKind[AstNodeKind["ASSIGN_EXPR"] = 33] = "ASSIGN_EXPR";
     AstNodeKind[AstNodeKind["TEMPLATE_DEF"] = 34] = "TEMPLATE_DEF";
     AstNodeKind[AstNodeKind["SIZEOF_EXPR"] = 35] = "SIZEOF_EXPR";
+    AstNodeKind[AstNodeKind["LITERAL_OP_EXPR"] = 36] = "LITERAL_OP_EXPR";
+    AstNodeKind[AstNodeKind["TYPE_ALIAS"] = 37] = "TYPE_ALIAS";
 })(AstNodeKind || (exports.AstNodeKind = AstNodeKind = {}));
 class AstNode {
     constructor(kind, line, col) {
@@ -193,6 +195,7 @@ class AstNode {
         this.isPureVirtual = false;
         this.isVariadic = false;
         this.isOperator = false;
+        this.isLiteralOperator = false;
         this.fields = [];
         this.methods = [];
         this.constructors = [];

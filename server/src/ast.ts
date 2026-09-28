@@ -74,6 +74,7 @@ export enum AstNodeKind {
 	INDEX_EXPR,MEMBER_EXPR,IDENT_EXPR,
 	INT_LIT,FLOAT_LIT,STRING_LIT,BOOL_LIT,CHAR_LIT,ARRAY_LIT,
 	CAST_EXPR,ASSIGN_EXPR,TEMPLATE_DEF,SIZEOF_EXPR,
+	LITERAL_OP_EXPR,TYPE_ALIAS,
 }
 
 export interface Param {
@@ -128,6 +129,10 @@ export class AstNode {
 	varType?: string;
 	initExpr?: AstNode;
 
+	// Type alias
+	aliasName?: string;
+	aliasedType?: string;
+
 	// Func
 	funcName?: string;
 	params: Param[]=[];
@@ -139,7 +144,9 @@ export class AstNode {
 	isPureVirtual: boolean=false;
 	isVariadic: boolean=false;
 	isOperator: boolean=false;
+	isLiteralOperator: boolean=false;
 	opName?: string;
+	literalSuffix?: string;
 	access?: string;
 	initList?: {name: string; expr: AstNode}[];
 

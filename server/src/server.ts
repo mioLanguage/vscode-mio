@@ -95,7 +95,6 @@ function loadHeaderFiles(includePaths: string[], workspaceRoot?: string): void {
 			// skip invalid paths
 		}
 	}
-	connection.console.log(`header symbols: ${headerSymbols.symbols.size} total`);
 }
 
 async function getWorkspaceRoot(): Promise<string | undefined> {
@@ -401,48 +400,57 @@ function getWordAtPosition(document: TextDocument, position: Position): string |
 }
 
 documents.onDidChangeContent(change => {
-	validateTextDocument(change.document);
-});
+		try {
+			validateTextDocument(change.document);
+		} catch {
+			// ignore parse failures during typing
+		}
+	});
 
-async function validateTextDocument(textDocument: TextDocument): Promise<void> {
-	const text = textDocument.getText();
-	const { errors, skippedRanges } = parseDocument(text);
-
-	const diagnostics: Diagnostic[] = [];
-	for (const err of errors) {
-		// Parse "Line X:Y: message" format
-		const match = err.match(/Line (\d+):(\d+): (.+)/);
-		if (match) {
-			const line = parseInt(match[1]) - 1;
-			const col = parseInt(match[2]) - 1;
-			const msg = match[3];
-			diagnostics.push({
-				severity: DiagnosticSeverity.Error,
-				range: {
-					start: { line, character: col },
-					end: { line, character: col + 1 },
-				},
-				message: msg,
-				source: 'mio',
-			});
+	async function validateTextDocument(textDocument: TextDocument): Promise<void> {
+		try {
+			const text = textDocument.getText();
+			const { errors, skippedRanges } = parseDocument(text);
+			const diagnostics = buildDiagnostics(errors, skippedRanges);
+			connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
+		} catch {
+			// ignore parse failures
 		}
 	}
 
-	for (const range of skippedRanges) {
-		diagnostics.push({
-			severity: DiagnosticSeverity.Hint,
-			range: {
-				start: { line: range.startLine - 1, character: range.startCol - 1 },
-				end: { line: range.endLine - 1, character: range.endCol - 1 },
-			},
-			message: 'Skipped by conditional compilation',
-			source: 'mio',
-			tags: [DiagnosticTag.Unnecessary],
-		});
+	function buildDiagnostics(errors: string[], skippedRanges: { startLine: number; startCol: number; endLine: number; endCol: number }[]): Diagnostic[] {
+		const diagnostics: Diagnostic[] = [];
+		for (const err of errors) {
+			const match = err.match(/Line (\d+):(\d+): (.+)/);
+			if (match) {
+				const line = parseInt(match[1]) - 1;
+				const col = parseInt(match[2]) - 1;
+				const msg = match[3];
+				diagnostics.push({
+					severity: DiagnosticSeverity.Error,
+					range: {
+						start: { line, character: col },
+						end: { line, character: col + 1 },
+					},
+					message: msg,
+					source: 'mio',
+				});
+			}
+		}
+		for (const range of skippedRanges) {
+			diagnostics.push({
+				severity: DiagnosticSeverity.Hint,
+				range: {
+					start: { line: range.startLine - 1, character: range.startCol - 1 },
+					end: { line: range.endLine - 1, character: range.endCol - 1 },
+				},
+				message: 'Skipped by conditional compilation',
+				source: 'mio',
+				tags: [DiagnosticTag.Unnecessary],
+			});
+		}
+		return diagnostics;
 	}
-
-	connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
-}
 
 connection.onDidChangeWatchedFiles(() => {
 	// Monitored files have changed
@@ -450,6 +458,7 @@ connection.onDidChangeWatchedFiles(() => {
 
 connection.onCompletion(
 	async (textDocumentPosition: TextDocumentPositionParams): Promise<CompletionItem[]> => {
+		try {
 		const document = documents.get(textDocumentPosition.textDocument.uri);
 		if (!document) {
 			return [];
@@ -653,6 +662,9 @@ connection.onCompletion(
 		}
 
 		return completions;
+		} catch {
+			return [];
+		}
 	}
 );
 
@@ -664,6 +676,7 @@ connection.onCompletionResolve(
 
 connection.onHover(
 	async (params: TextDocumentPositionParams): Promise<Hover | null> => {
+		try {
 		const document = documents.get(params.textDocument.uri);
 		if (!document) {
 			return null;
@@ -725,6 +738,9 @@ connection.onHover(
 		}
 
 		return null;
+		} catch {
+			return null;
+		}
 	}
 );
 

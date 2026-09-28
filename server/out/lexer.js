@@ -170,13 +170,40 @@ class Lexer {
         const startCol = this.col;
         let text = '';
         let isFloat = false;
-        let isHex = false;
-        if (this.cur() === '0' && (this.peek(1) === 'x' || this.peek(1) === 'X')) {
-            isHex = true;
-            text += this.advance();
-            text += this.advance();
-            while (this.isHexDigit(this.cur())) {
+        if (this.cur() === '0') {
+            const next = this.peek(1);
+            if (next === 'x' || next === 'X') {
                 text += this.advance();
+                text += this.advance();
+                while (this.isHexDigit(this.cur())) {
+                    text += this.advance();
+                }
+            }
+            else if (next === 'b' || next === 'B') {
+                text += this.advance();
+                text += this.advance();
+                while (this.cur() === '0' || this.cur() === '1') {
+                    text += this.advance();
+                }
+            }
+            else if (next === 'o' || next === 'O') {
+                text += this.advance();
+                text += this.advance();
+                while (this.cur() >= '0' && this.cur() <= '7') {
+                    text += this.advance();
+                }
+            }
+            else {
+                while (this.isDigit(this.cur())) {
+                    text += this.advance();
+                }
+                if (this.cur() === '.') {
+                    isFloat = true;
+                    text += this.advance();
+                    while (this.isDigit(this.cur())) {
+                        text += this.advance();
+                    }
+                }
             }
         }
         else {
@@ -196,8 +223,14 @@ class Lexer {
             token.floatVal = parseFloat(text);
         }
         else {
-            if (isHex) {
+            if (text.startsWith('0x') || text.startsWith('0X')) {
                 token.intVal = parseInt(text, 16);
+            }
+            else if (text.startsWith('0b') || text.startsWith('0B')) {
+                token.intVal = parseInt(text.substring(2), 2);
+            }
+            else if (text.startsWith('0o') || text.startsWith('0O')) {
+                token.intVal = parseInt(text.substring(2), 8);
             }
             else {
                 token.intVal = parseInt(text, 10);
