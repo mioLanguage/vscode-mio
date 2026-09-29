@@ -86,7 +86,7 @@ export class Parser {
 			case TokenKind.U8: case TokenKind.U16: case TokenKind.U32: case TokenKind.U64: case TokenKind.U128:
 			case TokenKind.USIZE: case TokenKind.ISIZE: case TokenKind.F32: case TokenKind.F64:
 			case TokenKind.BOOL: case TokenKind.CHAR: case TokenKind.VOID: case TokenKind.IDENT:
-			case TokenKind.STAR: case TokenKind.BIT_AND: case TokenKind.LPAREN:
+			case TokenKind.CONST: case TokenKind.STAR: case TokenKind.BIT_AND: case TokenKind.LPAREN:
 				return true;
 			default: return false;
 		}
@@ -1245,7 +1245,7 @@ export class Parser {
 			func.body = this.parseBlock();
 			if (this.funcReturnType && this.funcReturnType !== 'void' && !this.funcHasReturn) {
 				const isDtor = func.funcName && func.funcName.startsWith('~');
-				const isCtor = func.funcName && (func.funcName === func.className);
+				const isCtor = func.funcName && func.returnType && func.funcName === func.returnType;
 				if (!isDtor && !isCtor) {
 					this.errors.push(`Line ${func.line}:${func.col}: non-void function '${func.funcName}' does not return a value`);
 				}

@@ -2,7 +2,7 @@
   "name": "mioforvscode",
   "displayName": "miolanguage",
   "description": "mio for vscode",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "publisher": "HZY1618yzh",
   "license": "MIT",
   "repository": {
@@ -58,6 +58,15 @@
           },
           "default": [],
           "description": "头文件搜索路径列表，用于智能补全和符号解析"
+        }
+      }
+    },
+    "configurationDefaults": {
+      "[mio]": {
+        "editor.quickSuggestions": {
+          "other": "on",
+          "comments": "off",
+          "strings": "on"
         }
       }
     }
