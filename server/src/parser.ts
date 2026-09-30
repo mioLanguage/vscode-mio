@@ -1096,6 +1096,7 @@ export class Parser {
 					node.left = expr;
 					return node;
 				}
+				this.funcHasReturn = true;
 				const node = new AstNode(AstNodeKind.RETURN_STMT, expr.line, expr.col);
 				node.returnExpr = expr;
 				return node;

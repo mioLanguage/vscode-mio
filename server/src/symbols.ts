@@ -286,11 +286,13 @@ export class SymbolTable {
 	private collectClass(decl: AstNode, currentNamespace?: string): void {
 		if (!decl.className) { return; }
 		const methods = this.collectMethods(decl.methods);
+		const ctors = this.collectMethods(decl.constructors);
+		const allMethods = [...ctors, ...methods];
 		const info: SymbolInfo = {
 			name: decl.className,
 			kind: 'class',
 			fields: decl.fields,
-			methods,
+			methods: allMethods,
 			baseName: decl.baseName,
 			line: decl.line,
 			col: decl.col,
@@ -303,9 +305,9 @@ export class SymbolTable {
 			startLine: decl.line,
 			endLine: Number.MAX_SAFE_INTEGER,
 			fields: decl.fields,
-			methods,
+			methods: allMethods,
 		});
-		for (const method of methods) {
+		for (const method of allMethods) {
 			this.add(method.name, method);
 		}
 	}

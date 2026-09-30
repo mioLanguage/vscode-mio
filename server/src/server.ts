@@ -529,7 +529,7 @@ connection.onCompletion(
 		const memberMatch = line.match(/(\w+(?:::\w+)*)\s*(\.|->)\s*$/);
 		if (memberMatch) {
 			const exprName = memberMatch[1];
-			return getMemberCompletions(exprName, symbols, headerSymbols);
+			return getMemberCompletions(exprName, symbols, headerSymbols, position.line);
 		}
 
 		// 3. Namespace: expr::
@@ -550,13 +550,75 @@ connection.onCompletion(
 			}
 		}
 
-		// 4. @ directive
+		// 4b. import keyword (before quotes)
+		const importMatch = line.match(/^\s*import\s*$/);
+		if (importMatch) {
+			const completions: CompletionItem[] = [];
+			const workspaceRoot = await getWorkspaceRoot();
+			const searchDirs: string[] = [
+				path.dirname(document.uri),
+			];
+			if (workspaceRoot) {
+				const commonDirs = ['include', 'lib', 'src'];
+				for (const dir of commonDirs) {
+					const fullDir = path.join(workspaceRoot, dir);
+					if (fs.existsSync(fullDir)) {
+						searchDirs.push(fullDir);
+					}
+				}
+			}
+			const seen = new Set<string>();
+			for (const searchDir of searchDirs) {
+				try {
+					const files = globSync('**/*.mio', { cwd: searchDir });
+					for (const file of files) {
+						const name = file.replace(/\.mio$/, '').replace(/\\/g, '/');
+						if (!seen.has(name)) {
+							seen.add(name);
+							completions.push({
+								label: `"${name}"`,
+								kind: CompletionItemKind.File,
+								detail: `import "${name}"`,
+							});
+						}
+					}
+				} catch {
+					// skip
+				}
+			}
+			const allSyms = symbols.getAllSymbols();
+			for (const sym of allSyms) {
+				if (sym.kind === 'namespace') {
+					completions.push({
+						label: sym.name + '::',
+						kind: CompletionItemKind.Module,
+						detail: `namespace ${sym.name}`,
+					});
+				}
+			}
+			return completions;
+		}
+
+		// 4c. @ directive
 		if (line.endsWith('@')) {
 			return [
 				{ label: '@if', kind: CompletionItemKind.Keyword, detail: '条件编译 if' },
 				{ label: '@elif', kind: CompletionItemKind.Keyword, detail: '条件编译 elif' },
 				{ label: '@else', kind: CompletionItemKind.Keyword, detail: '条件编译 else' },
 				{ label: '@end', kind: CompletionItemKind.Keyword, detail: '条件编译结束' },
+			];
+		}
+
+		// 4b. extern context
+		const externMatch = line.match(/^\s*extern\s*$/);
+		if (externMatch) {
+			return [
+				{ label: 'var', kind: CompletionItemKind.Keyword, detail: 'extern variable' },
+				{ label: 'const', kind: CompletionItemKind.Keyword, detail: 'extern constant' },
+				...TYPES.filter(t => t.label !== 'void').map(t => ({
+					...t,
+					detail: `extern function returning ${t.label}`,
+				})),
 			];
 		}
 
@@ -603,17 +665,21 @@ connection.onCompletion(
 			return completions;
 		}
 
-		// 7. Class body: suggest constructor when line starts with className or modifiers
+		// 7. Class body: suggest constructor + fields + methods
 		const classInfo = findTypeAtLine(symbols, position.line);
 		if (classInfo && classInfo.kind === 'class') {
-			const trimmed = line.trim();
 			const completions: CompletionItem[] = [];
-			if (/^(public|private|protected)\s*:\s*$/.test(trimmed)
-				|| /^(public|private|protected)$/.test(trimmed)
-				|| /^(virtual|override|static)\s*$/.test(trimmed)
-				|| trimmed === '') {
-				const ctorName = classInfo.name;
-				const ctorMethod = classInfo.methods?.find(m => m.name === ctorName
+			completions.push(
+				{ label: 'public', kind: CompletionItemKind.Keyword, detail: 'public access' },
+				{ label: 'private', kind: CompletionItemKind.Keyword, detail: 'private access' },
+				{ label: 'protected', kind: CompletionItemKind.Keyword, detail: 'protected access' },
+				{ label: 'virtual', kind: CompletionItemKind.Keyword, detail: 'virtual method' },
+				{ label: 'override', kind: CompletionItemKind.Keyword, detail: 'override method' },
+				{ label: 'static', kind: CompletionItemKind.Keyword, detail: 'static method' },
+			);
+			const ctorName = classInfo.name;
+			if (classInfo.methods) {
+				const ctorMethod = classInfo.methods.find(m => m.name === ctorName
 					|| m.name === 'constructor');
 				if (ctorMethod) {
 					const params = ctorMethod.params?.map(p => `${p.name}: ${p.typeName || '?'}`).join(', ') || '';
@@ -631,16 +697,26 @@ connection.onCompletion(
 						insertText: ctorName,
 					});
 				}
-				completions.push(
-					{ label: 'public', kind: CompletionItemKind.Keyword, detail: 'public access' },
-					{ label: 'private', kind: CompletionItemKind.Keyword, detail: 'private access' },
-					{ label: 'protected', kind: CompletionItemKind.Keyword, detail: 'protected access' },
-					{ label: 'virtual', kind: CompletionItemKind.Keyword, detail: 'virtual method' },
-					{ label: 'override', kind: CompletionItemKind.Keyword, detail: 'override method' },
-					{ label: 'static', kind: CompletionItemKind.Keyword, detail: 'static method' },
-				);
-				return completions;
+				for (const method of classInfo.methods) {
+					if (method.name === ctorName || method.name.startsWith('~')) { continue; }
+					const params = method.params?.map(p => `${p.name}: ${p.typeName || '?'}`).join(', ') || '';
+					completions.push({
+						label: method.name,
+						kind: CompletionItemKind.Method,
+						detail: `${method.returnType || 'void'} ${method.name}(${params})`,
+					});
+				}
 			}
+			if (classInfo.fields) {
+				for (const field of classInfo.fields) {
+					completions.push({
+						label: field.name + ':',
+						kind: CompletionItemKind.Field,
+						detail: `field: ${field.typeName}`,
+					});
+				}
+			}
+			return completions;
 		}
 
 		// 8. Default: keywords + snippets + top-level types/functions
@@ -651,8 +727,17 @@ connection.onCompletion(
 	}
 );
 
-function getMemberCompletions(exprName: string, symbols: SymbolTable, headerSymbols: SymbolTable): CompletionItem[] {
+function getMemberCompletions(exprName: string, symbols: SymbolTable, headerSymbols: SymbolTable, positionLine?: number): CompletionItem[] {
 	let typeInfo = symbols.getType(exprName);
+	if (!typeInfo && exprName === 'this' && positionLine !== undefined) {
+		const classInfo = findTypeAtLine(symbols, positionLine);
+		if (classInfo) {
+			typeInfo = classInfo;
+			if (typeInfo.methods) {
+				typeInfo = { ...typeInfo, methods: typeInfo.methods.filter(m => m.name !== '~' + classInfo.name) };
+			}
+		}
+	}
 	if (!typeInfo) {
 		const sym = symbols.get(exprName);
 		if (sym && sym.typeName) {
