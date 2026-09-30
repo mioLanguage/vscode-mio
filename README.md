@@ -39,9 +39,9 @@ mioc --version
 
 ```json
 {
-    "code-runner.executorMap": {
-        "mio": "mioc $fullFileName -o $fileNameWithoutExt && ./$fileNameWithoutExt"
-    }
+	"code-runner.executorMap": {
+		"mio": "mioc $fullFileName -o $fileNameWithoutExt && ./$fileNameWithoutExt"
+	}
 }
 ```
 
@@ -53,12 +53,13 @@ mioc --version
 ## 语法示例
 
 ```mio
-import stdio.h;
+import "std";
 
-def void main() {
-    var x: i32 = 10;
-    printf("Hello, Mio!\n");
-    printf("x = %d\n", x);
+i32 main() {
+	var x: i32 = 10;
+	printf("Hello, Mio!\n");
+	printf("x = %d\n", x);
+	0
 }
 ```
 
@@ -68,7 +69,7 @@ def void main() {
 A: 检查右下角语言模式是否为 `Mio`，如果不是，手动选择 `Mio`。
 
 **Q: 代码片段不触发？**  
-A: 输入 `def` 后按 `Tab` 键。如果无效，按 `Ctrl+Space` 手动触发补全。
+A: 按 `Ctrl+Space` 手动触发补全。
 
 **Q: 运行代码时提示 `mioc: command not found`**  
 A: 说明 `mioc` 不在 PATH 中。请将其所在目录添加到系统环境变量，或使用绝对路径配置 Code Runner。

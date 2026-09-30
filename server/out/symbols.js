@@ -7,6 +7,8 @@ class SymbolTable {
         this.symbols = new Map();
         this.types = new Map();
         this.namespaces = new Map();
+        this.functionScopes = [];
+        this.typeRanges = [];
         this.parent = parent;
     }
     add(name, info) {
@@ -136,40 +138,57 @@ class SymbolTable {
             col: decl.col,
         };
         this.add(name, info);
-        if (decl.body) {
-            this.collectStmts(decl.body.stmts);
+        const scope = {
+            funcName: name,
+            returnType: decl.returnType || 'void',
+            startLine: decl.line,
+            endLine: Number.MAX_SAFE_INTEGER,
+            locals: new Map(),
+        };
+        for (const p of decl.params) {
+            scope.locals.set(p.name, {
+                name: p.name,
+                kind: 'variable',
+                typeName: p.typeName,
+                line: decl.line,
+                col: decl.col,
+            });
         }
+        if (decl.body) {
+            this.collectStmts(decl.body.stmts, scope);
+        }
+        this.functionScopes.push(scope);
     }
-    collectStmts(stmts) {
+    collectStmts(stmts, scope) {
         for (const stmt of stmts) {
             switch (stmt.kind) {
                 case ast_1.AstNodeKind.VAR_DECL:
-                    this.collectVariable(stmt);
+                    this.collectVariable(stmt, undefined, scope);
                     break;
                 case ast_1.AstNodeKind.CONST_DECL:
-                    this.collectConstant(stmt);
+                    this.collectConstant(stmt, undefined, scope);
                     break;
                 case ast_1.AstNodeKind.IF_STMT:
                     if (stmt.thenBlock) {
-                        this.collectStmts(stmt.thenBlock.stmts);
+                        this.collectStmts(stmt.thenBlock.stmts, scope);
                     }
                     if (stmt.elseBlock) {
-                        this.collectStmts(stmt.elseBlock.stmts);
+                        this.collectStmts(stmt.elseBlock.stmts, scope);
                     }
                     break;
                 case ast_1.AstNodeKind.WHILE_STMT:
                     if (stmt.thenBlock) {
-                        this.collectStmts(stmt.thenBlock.stmts);
+                        this.collectStmts(stmt.thenBlock.stmts, scope);
                     }
                     break;
                 case ast_1.AstNodeKind.FOR_STMT:
                     if (stmt.thenBlock) {
-                        this.collectStmts(stmt.thenBlock.stmts);
+                        this.collectStmts(stmt.thenBlock.stmts, scope);
                     }
                     break;
                 case ast_1.AstNodeKind.BLOCK:
                     if (stmt.stmts) {
-                        this.collectStmts(stmt.stmts);
+                        this.collectStmts(stmt.stmts, scope);
                     }
                     break;
                 default:
@@ -177,29 +196,37 @@ class SymbolTable {
             }
         }
     }
-    collectVariable(decl, currentNamespace) {
+    collectVariable(decl, currentNamespace, scope) {
         if (!decl.varName) {
             return;
         }
-        this.add(decl.varName, {
+        const info = {
             name: decl.varName,
             kind: 'variable',
             typeName: decl.varType,
             line: decl.line,
             col: decl.col,
-        });
+        };
+        this.add(decl.varName, info);
+        if (scope) {
+            scope.locals.set(decl.varName, info);
+        }
     }
-    collectConstant(decl, currentNamespace) {
+    collectConstant(decl, currentNamespace, scope) {
         if (!decl.varName) {
             return;
         }
-        this.add(decl.varName, {
+        const info = {
             name: decl.varName,
             kind: 'constant',
             typeName: decl.varType,
             line: decl.line,
             col: decl.col,
-        });
+        };
+        this.add(decl.varName, info);
+        if (scope) {
+            scope.locals.set(decl.varName, info);
+        }
     }
     collectEnum(decl, currentNamespace) {
         if (!decl.className) {
@@ -214,6 +241,13 @@ class SymbolTable {
         };
         this.addType(decl.className, info);
         this.add(decl.className, info);
+        this.typeRanges.push({
+            name: decl.className,
+            kind: 'enum',
+            startLine: decl.line,
+            endLine: Number.MAX_SAFE_INTEGER,
+            variants: decl.variants,
+        });
     }
     collectUnion(decl, currentNamespace) {
         if (!decl.className) {
@@ -228,24 +262,41 @@ class SymbolTable {
         };
         this.addType(decl.className, info);
         this.add(decl.className, info);
+        this.typeRanges.push({
+            name: decl.className,
+            kind: 'union',
+            startLine: decl.line,
+            endLine: Number.MAX_SAFE_INTEGER,
+            fields: decl.fields,
+        });
     }
     collectClass(decl, currentNamespace) {
         if (!decl.className) {
             return;
         }
         const methods = this.collectMethods(decl.methods);
+        const ctors = this.collectMethods(decl.constructors);
+        const allMethods = [...ctors, ...methods];
         const info = {
             name: decl.className,
             kind: 'class',
             fields: decl.fields,
-            methods,
+            methods: allMethods,
             baseName: decl.baseName,
             line: decl.line,
             col: decl.col,
         };
         this.addType(decl.className, info);
         this.add(decl.className, info);
-        for (const method of methods) {
+        this.typeRanges.push({
+            name: decl.className,
+            kind: 'class',
+            startLine: decl.line,
+            endLine: Number.MAX_SAFE_INTEGER,
+            fields: decl.fields,
+            methods: allMethods,
+        });
+        for (const method of allMethods) {
             this.add(method.name, method);
         }
     }
@@ -286,6 +337,15 @@ class SymbolTable {
     }
     getNamespace(name) {
         return this.namespaces.get(name) || this.parent?.getNamespace(name);
+    }
+    getScopeAtLine(line) {
+        for (let i = this.functionScopes.length - 1; i >= 0; i--) {
+            const s = this.functionScopes[i];
+            if (line >= s.startLine && line <= s.endLine) {
+                return s;
+            }
+        }
+        return undefined;
     }
 }
 exports.SymbolTable = SymbolTable;

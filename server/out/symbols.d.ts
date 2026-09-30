@@ -14,10 +14,27 @@ export interface SymbolInfo {
     line: number;
     col: number;
 }
+export interface FunctionScope {
+    funcName: string;
+    returnType: string;
+    startLine: number;
+    endLine: number;
+    locals: Map<string, SymbolInfo>;
+}
 export declare class SymbolTable {
     symbols: Map<string, SymbolInfo>;
     types: Map<string, SymbolInfo>;
     namespaces: Map<string, SymbolTable>;
+    functionScopes: FunctionScope[];
+    typeRanges: {
+        name: string;
+        kind: string;
+        startLine: number;
+        endLine: number;
+        fields?: Field[];
+        methods?: SymbolInfo[];
+        variants?: Variant[];
+    }[];
     private parent?;
     constructor(parent?: SymbolTable);
     add(name: string, info: SymbolInfo): void;
@@ -41,5 +58,6 @@ export declare class SymbolTable {
     private collectTemplate;
     private collectMethods;
     getNamespace(name: string): SymbolTable | undefined;
+    getScopeAtLine(line: number): FunctionScope | undefined;
 }
 //# sourceMappingURL=symbols.d.ts.map

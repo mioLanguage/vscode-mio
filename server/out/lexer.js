@@ -96,6 +96,9 @@ class Lexer {
             this.col = 1;
             this.bol = this.pos;
         }
+        else if (c === '\t') {
+            this.col += 4;
+        }
         else {
             this.col++;
         }
@@ -336,7 +339,7 @@ class Lexer {
         if (kind !== undefined) {
             return new ast_1.Token(kind, '@' + text, startLine, startCol);
         }
-        return new ast_1.Token(ast_1.TokenKind.ERROR, "unknown directive '@" + text + "'", startLine, startCol);
+        return new ast_1.Token(ast_1.TokenKind.IDENT, '@' + text, startLine, startCol);
     }
     preprocessToken() {
         while (true) {

@@ -126,6 +126,7 @@ class Parser {
             case ast_1.TokenKind.CHAR:
             case ast_1.TokenKind.VOID:
             case ast_1.TokenKind.IDENT:
+            case ast_1.TokenKind.CONST:
             case ast_1.TokenKind.STAR:
             case ast_1.TokenKind.BIT_AND:
             case ast_1.TokenKind.LPAREN:
@@ -1219,6 +1220,7 @@ class Parser {
                     node.left = expr;
                     return node;
                 }
+                this.funcHasReturn = true;
                 const node = new ast_1.AstNode(ast_1.AstNodeKind.RETURN_STMT, expr.line, expr.col);
                 node.returnExpr = expr;
                 return node;
@@ -1387,7 +1389,7 @@ class Parser {
             func.body = this.parseBlock();
             if (this.funcReturnType && this.funcReturnType !== 'void' && !this.funcHasReturn) {
                 const isDtor = func.funcName && func.funcName.startsWith('~');
-                const isCtor = func.funcName && (func.funcName === func.className);
+                const isCtor = func.funcName && func.returnType && func.funcName === func.returnType;
                 if (!isDtor && !isCtor) {
                     this.errors.push(`Line ${func.line}:${func.col}: non-void function '${func.funcName}' does not return a value`);
                 }

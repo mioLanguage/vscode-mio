@@ -551,8 +551,8 @@ connection.onCompletion(
 		}
 
 		// 4b. import keyword (before quotes)
-		const importMatch = line.match(/^\s*import\s*$/);
-		if (importMatch) {
+		const importKeywordMatch = line.match(/^\s*import\s*$/);
+		if (importKeywordMatch) {
 			const completions: CompletionItem[] = [];
 			const workspaceRoot = await getWorkspaceRoot();
 			const searchDirs: string[] = [
