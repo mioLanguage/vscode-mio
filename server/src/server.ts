@@ -22,7 +22,7 @@ import {
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Parser } from './parser';
-import { SymbolTable, SymbolInfo } from './symbols';
+import { SymbolTable, SymbolInfo, FunctionScope } from './symbols';
 import { AstNodeKind, TokenKind } from './ast';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -473,18 +473,16 @@ connection.onCompletion(
 			end: { line: position.line, character: position.character },
 		});
 
-		// Check if we're typing an import path: import "xxx" 或 import "xxx",yyy
+		// 1. Import path: import "..."
 		const importMatch = line.match(/^import\s+("?)([\w./]*)"?/);
 		if (importMatch) {
 			const quote = importMatch[1];
 			const currentPath = importMatch[2];
 			const completions: CompletionItem[] = [];
 
-			// Scan include paths for .mio files
 			const workspaceRoot = await getWorkspaceRoot();
 			const searchDirs: string[] = [];
 
-			// Add configured include paths
 			if (cachedIncludePaths.length > 0) {
 				for (const p of cachedIncludePaths) {
 					const resolved = path.isAbsolute(p) ? p : (workspaceRoot ? path.join(workspaceRoot, p) : p);
@@ -494,7 +492,6 @@ connection.onCompletion(
 				}
 			}
 
-			// Add common include directories
 			if (workspaceRoot) {
 				const commonDirs = ['include', 'lib', 'src'];
 				for (const dir of commonDirs) {
@@ -528,53 +525,14 @@ connection.onCompletion(
 			return completions;
 		}
 
-		// Check if we're after a . or -> for member completion
-		const memberMatch = line.match(/(\w+)\s*(\.|->)\s*$/);
+		// 2. Member access: expr. or expr->
+		const memberMatch = line.match(/(\w+(?:::\w+)*)\s*(\.|->)\s*$/);
 		if (memberMatch) {
-			const objName = memberMatch[1];
-			const typeInfo = symbols.getType(objName) || symbols.get(objName);
-			if (typeInfo && (typeInfo.kind === 'struct' || typeInfo.kind === 'class' || typeInfo.kind === 'enum')) {
-				const completions: CompletionItem[] = [];
-
-				// Fields
-				if (typeInfo.fields) {
-					for (const field of typeInfo.fields) {
-						completions.push({
-							label: field.name,
-							kind: CompletionItemKind.Field,
-							detail: `field: ${field.typeName}`,
-						});
-					}
-				}
-
-				// Methods
-				if (typeInfo.methods) {
-					for (const method of typeInfo.methods) {
-						const params = method.params?.map(p => `${p.name}: ${p.typeName || '?'}`).join(', ') || '';
-						completions.push({
-							label: method.name,
-							kind: CompletionItemKind.Method,
-							detail: `${method.returnType || 'void'} ${method.name}(${params})`,
-						});
-					}
-				}
-
-				// Enum variants
-				if (typeInfo.variants) {
-					for (const variant of typeInfo.variants) {
-						completions.push({
-							label: variant.name,
-							kind: CompletionItemKind.EnumMember,
-							detail: `${typeInfo.name}.${variant.name}`,
-						});
-					}
-				}
-
-				return completions;
-			}
+			const exprName = memberMatch[1];
+			return getMemberCompletions(exprName, symbols, headerSymbols);
 		}
 
-		// Check if we're after :: for namespace completion
+		// 3. Namespace: expr::
 		const nsMatch = line.match(/(\w+)\s*::\s*$/);
 		if (nsMatch) {
 			const nsName = nsMatch[1];
@@ -592,7 +550,7 @@ connection.onCompletion(
 			}
 		}
 
-		// Check if we're after @ for conditional compilation
+		// 4. @ directive
 		if (line.endsWith('@')) {
 			return [
 				{ label: '@if', kind: CompletionItemKind.Keyword, detail: '条件编译 if' },
@@ -602,11 +560,30 @@ connection.onCompletion(
 			];
 		}
 
-		// Check if we're after a type context (after : or var/const)
-		const typeContext = line.match(/(:\s*|var\s+\w+\s*:\s*|const\s+\w+\s*:\s*|extern\s+)$/);
-		if (typeContext) {
+		// 5. Return statement: return <expr>
+		const returnMatch = line.match(/\breturn\s+(.*)$/);
+		if (returnMatch) {
+			const scope = symbols.getScopeAtLine(position.line);
+			const completions: CompletionItem[] = [];
+			if (scope) {
+				for (const [, v] of scope.locals) {
+					completions.push({
+						label: v.name,
+						kind: CompletionItemKind.Variable,
+						detail: `${v.typeName || '?'} ${v.name}`,
+					});
+				}
+			}
+			if (completions.length === 0) {
+				return buildDefaultCompletions(symbols, headerSymbols);
+			}
+			return completions;
+		}
+
+		// 6. Type context: after ':' in var/const/param
+		const typeCtx = line.match(/(:\s*|var\s+\w+\s*:\s*|const\s+\w+\s*:\s*|extern\s+)$/);
+		if (typeCtx) {
 			const completions = [...TYPES];
-			// Add user-defined types
 			for (const sym of symbols.getAllTypes()) {
 				completions.push({
 					label: sym.name,
@@ -614,59 +591,168 @@ connection.onCompletion(
 					detail: getSymbolDetail(sym),
 				});
 			}
+			for (const sym of headerSymbols.getAllTypes()) {
+				if (!completions.find(c => c.label === sym.name)) {
+					completions.push({
+						label: sym.name,
+						kind: getSymbolKind(sym),
+						detail: getSymbolDetail(sym),
+					});
+				}
+			}
 			return completions;
 		}
 
-		// Default: keywords + types + symbols
-		const completions: CompletionItem[] = [...KEYWORDS, ...SNIPPETS, ...TYPES];
-
-		// Add symbols from header files
-		for (const sym of headerSymbols.getAllSymbols()) {
-			completions.push({
-				label: sym.name,
-				kind: getSymbolKind(sym),
-				detail: getSymbolDetail(sym),
-			});
-		}
-
-		// Add types from header files
-		for (const sym of headerSymbols.getAllTypes()) {
-			if (!completions.find(c => c.label === sym.name)) {
-				completions.push({
-					label: sym.name,
-					kind: getSymbolKind(sym),
-					detail: getSymbolDetail(sym),
-				});
+		// 7. Class body: suggest constructor when line starts with className or modifiers
+		const classInfo = findTypeAtLine(symbols, position.line);
+		if (classInfo && classInfo.kind === 'class') {
+			const trimmed = line.trim();
+			const completions: CompletionItem[] = [];
+			if (/^(public|private|protected)\s*:\s*$/.test(trimmed)
+				|| /^(public|private|protected)$/.test(trimmed)
+				|| /^(virtual|override|static)\s*$/.test(trimmed)
+				|| trimmed === '') {
+				const ctorName = classInfo.name;
+				const ctorMethod = classInfo.methods?.find(m => m.name === ctorName
+					|| m.name === 'constructor');
+				if (ctorMethod) {
+					const params = ctorMethod.params?.map(p => `${p.name}: ${p.typeName || '?'}`).join(', ') || '';
+					completions.push({
+						label: ctorName,
+						kind: CompletionItemKind.Constructor,
+						detail: `${ctorName}(${params})`,
+						insertText: ctorName,
+					});
+				} else {
+					completions.push({
+						label: ctorName,
+						kind: CompletionItemKind.Constructor,
+						detail: `constructor ${ctorName}()`,
+						insertText: ctorName,
+					});
+				}
+				completions.push(
+					{ label: 'public', kind: CompletionItemKind.Keyword, detail: 'public access' },
+					{ label: 'private', kind: CompletionItemKind.Keyword, detail: 'private access' },
+					{ label: 'protected', kind: CompletionItemKind.Keyword, detail: 'protected access' },
+					{ label: 'virtual', kind: CompletionItemKind.Keyword, detail: 'virtual method' },
+					{ label: 'override', kind: CompletionItemKind.Keyword, detail: 'override method' },
+					{ label: 'static', kind: CompletionItemKind.Keyword, detail: 'static method' },
+				);
+				return completions;
 			}
 		}
 
-		// Add symbols from the current file
-		for (const sym of symbols.getAllSymbols()) {
-			completions.push({
-				label: sym.name,
-				kind: getSymbolKind(sym),
-				detail: getSymbolDetail(sym),
-			});
-		}
-
-		// Add types
-		for (const sym of symbols.getAllTypes()) {
-			// Avoid duplicates
-			if (!completions.find(c => c.label === sym.name)) {
-				completions.push({
-					label: sym.name,
-					kind: getSymbolKind(sym),
-					detail: getSymbolDetail(sym),
-				});
-			}
-		}
-
-		return completions;
+		// 8. Default: keywords + snippets + top-level types/functions
+		return buildDefaultCompletions(symbols, headerSymbols);
 		} catch {
 			return [];
 		}
 	}
 );
+
+function getMemberCompletions(exprName: string, symbols: SymbolTable, headerSymbols: SymbolTable): CompletionItem[] {
+	let typeInfo = symbols.getType(exprName);
+	if (!typeInfo) {
+		const sym = symbols.get(exprName);
+		if (sym && sym.typeName) {
+			typeInfo = symbols.getType(sym.typeName) || headerSymbols.getType(sym.typeName);
+		}
+	}
+	if (!typeInfo) {
+		typeInfo = headerSymbols.getType(exprName);
+	}
+	if (!typeInfo) {
+		return [];
+	}
+	const completions: CompletionItem[] = [];
+	if (typeInfo.fields) {
+		for (const field of typeInfo.fields) {
+			completions.push({
+				label: field.name,
+				kind: CompletionItemKind.Field,
+				detail: `field: ${field.typeName}`,
+			});
+		}
+	}
+	if (typeInfo.methods) {
+		for (const method of typeInfo.methods) {
+			const params = method.params?.map(p => `${p.name}: ${p.typeName || '?'}`).join(', ') || '';
+			completions.push({
+				label: method.name,
+				kind: CompletionItemKind.Method,
+				detail: `${method.returnType || 'void'} ${method.name}(${params})`,
+			});
+		}
+	}
+	if (typeInfo.variants) {
+		for (const variant of typeInfo.variants) {
+			completions.push({
+				label: variant.name,
+				kind: CompletionItemKind.EnumMember,
+				detail: `${typeInfo.name}.${variant.name}`,
+			});
+		}
+	}
+	return completions;
+}
+
+function findTypeAtLine(symbols: SymbolTable, line: number): SymbolInfo | undefined {
+	for (let i = symbols.typeRanges.length - 1; i >= 0; i--) {
+		const r = symbols.typeRanges[i];
+		if (line >= r.startLine && line <= r.endLine) {
+			return symbols.getType(r.name);
+		}
+	}
+	return undefined;
+}
+
+function buildDefaultCompletions(symbols: SymbolTable, headerSymbols: SymbolTable): CompletionItem[] {
+	const completions: CompletionItem[] = [...KEYWORDS, ...SNIPPETS, ...TYPES];
+	const seen = new Set<string>(KEYWORDS.map(k => k.label));
+
+	for (const sym of headerSymbols.getAllTypes()) {
+		if (!seen.has(sym.name)) {
+			seen.add(sym.name);
+			completions.push({
+				label: sym.name,
+				kind: getSymbolKind(sym),
+				detail: getSymbolDetail(sym),
+			});
+		}
+	}
+	for (const sym of headerSymbols.getAllSymbols()) {
+		if (!seen.has(sym.name) && sym.kind === 'function') {
+			seen.add(sym.name);
+			completions.push({
+				label: sym.name,
+				kind: getSymbolKind(sym),
+				detail: getSymbolDetail(sym),
+			});
+		}
+	}
+	for (const sym of symbols.getAllTypes()) {
+		if (!seen.has(sym.name)) {
+			seen.add(sym.name);
+			completions.push({
+				label: sym.name,
+				kind: getSymbolKind(sym),
+				detail: getSymbolDetail(sym),
+			});
+		}
+	}
+	for (const sym of symbols.getAllSymbols()) {
+		if (!seen.has(sym.name) && (sym.kind === 'function' || sym.kind === 'namespace')) {
+			seen.add(sym.name);
+			completions.push({
+				label: sym.name,
+				kind: getSymbolKind(sym),
+				detail: getSymbolDetail(sym),
+			});
+		}
+	}
+	return completions;
+}
 
 connection.onCompletionResolve(
 	(item: CompletionItem): CompletionItem => {

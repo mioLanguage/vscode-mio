@@ -16,10 +16,20 @@ export interface SymbolInfo {
 	col: number;
 }
 
+export interface FunctionScope {
+	funcName: string;
+	returnType: string;
+	startLine: number;
+	endLine: number;
+	locals: Map<string, SymbolInfo>;
+}
+
 export class SymbolTable {
 	symbols: Map<string, SymbolInfo> = new Map();
 	types: Map<string, SymbolInfo> = new Map();
 	namespaces: Map<string, SymbolTable> = new Map();
+	functionScopes: FunctionScope[] = [];
+	typeRanges: { name: string; kind: string; startLine: number; endLine: number; fields?: Field[]; methods?: SymbolInfo[]; variants?: Variant[] }[] = [];
 	private parent?: SymbolTable;
 
 	constructor(parent?: SymbolTable) {
@@ -153,32 +163,49 @@ export class SymbolTable {
 			col: decl.col,
 		};
 		this.add(name, info);
-		if (decl.body) {
-			this.collectStmts(decl.body.stmts);
+		const scope: FunctionScope = {
+			funcName: name,
+			returnType: decl.returnType || 'void',
+			startLine: decl.line,
+			endLine: Number.MAX_SAFE_INTEGER,
+			locals: new Map(),
+		};
+		for (const p of decl.params) {
+			scope.locals.set(p.name, {
+				name: p.name,
+				kind: 'variable',
+				typeName: p.typeName,
+				line: decl.line,
+				col: decl.col,
+			});
 		}
+		if (decl.body) {
+			this.collectStmts(decl.body.stmts, scope);
+		}
+		this.functionScopes.push(scope);
 	}
 
-	private collectStmts(stmts: AstNode[]): void {
+	private collectStmts(stmts: AstNode[], scope?: FunctionScope): void {
 		for (const stmt of stmts) {
 			switch (stmt.kind) {
 				case AstNodeKind.VAR_DECL:
-					this.collectVariable(stmt);
+					this.collectVariable(stmt, undefined, scope);
 					break;
 				case AstNodeKind.CONST_DECL:
-					this.collectConstant(stmt);
+					this.collectConstant(stmt, undefined, scope);
 					break;
 				case AstNodeKind.IF_STMT:
-					if (stmt.thenBlock) { this.collectStmts(stmt.thenBlock.stmts); }
-					if (stmt.elseBlock) { this.collectStmts(stmt.elseBlock.stmts); }
+					if (stmt.thenBlock) { this.collectStmts(stmt.thenBlock.stmts, scope); }
+					if (stmt.elseBlock) { this.collectStmts(stmt.elseBlock.stmts, scope); }
 					break;
 				case AstNodeKind.WHILE_STMT:
-					if (stmt.thenBlock) { this.collectStmts(stmt.thenBlock.stmts); }
+					if (stmt.thenBlock) { this.collectStmts(stmt.thenBlock.stmts, scope); }
 					break;
 				case AstNodeKind.FOR_STMT:
-					if (stmt.thenBlock) { this.collectStmts(stmt.thenBlock.stmts); }
+					if (stmt.thenBlock) { this.collectStmts(stmt.thenBlock.stmts, scope); }
 					break;
 				case AstNodeKind.BLOCK:
-					if (stmt.stmts) { this.collectStmts(stmt.stmts); }
+					if (stmt.stmts) { this.collectStmts(stmt.stmts, scope); }
 					break;
 				default:
 					break;
@@ -186,26 +213,34 @@ export class SymbolTable {
 		}
 	}
 
-	private collectVariable(decl: AstNode, currentNamespace?: string): void {
+	private collectVariable(decl: AstNode, currentNamespace?: string, scope?: FunctionScope): void {
 		if (!decl.varName) { return; }
-		this.add(decl.varName, {
+		const info: SymbolInfo = {
 			name: decl.varName,
 			kind: 'variable',
 			typeName: decl.varType,
 			line: decl.line,
 			col: decl.col,
-		});
+		};
+		this.add(decl.varName, info);
+		if (scope) {
+			scope.locals.set(decl.varName, info);
+		}
 	}
 
-	private collectConstant(decl: AstNode, currentNamespace?: string): void {
+	private collectConstant(decl: AstNode, currentNamespace?: string, scope?: FunctionScope): void {
 		if (!decl.varName) { return; }
-		this.add(decl.varName, {
+		const info: SymbolInfo = {
 			name: decl.varName,
 			kind: 'constant',
 			typeName: decl.varType,
 			line: decl.line,
 			col: decl.col,
-		});
+		};
+		this.add(decl.varName, info);
+		if (scope) {
+			scope.locals.set(decl.varName, info);
+		}
 	}
 
 	private collectEnum(decl: AstNode, currentNamespace?: string): void {
@@ -219,6 +254,13 @@ export class SymbolTable {
 		};
 		this.addType(decl.className, info);
 		this.add(decl.className, info);
+		this.typeRanges.push({
+			name: decl.className,
+			kind: 'enum',
+			startLine: decl.line,
+			endLine: Number.MAX_SAFE_INTEGER,
+			variants: decl.variants,
+		});
 	}
 
 	private collectUnion(decl: AstNode, currentNamespace?: string): void {
@@ -232,6 +274,13 @@ export class SymbolTable {
 		};
 		this.addType(decl.className, info);
 		this.add(decl.className, info);
+		this.typeRanges.push({
+			name: decl.className,
+			kind: 'union',
+			startLine: decl.line,
+			endLine: Number.MAX_SAFE_INTEGER,
+			fields: decl.fields,
+		});
 	}
 
 	private collectClass(decl: AstNode, currentNamespace?: string): void {
@@ -248,6 +297,14 @@ export class SymbolTable {
 		};
 		this.addType(decl.className, info);
 		this.add(decl.className, info);
+		this.typeRanges.push({
+			name: decl.className,
+			kind: 'class',
+			startLine: decl.line,
+			endLine: Number.MAX_SAFE_INTEGER,
+			fields: decl.fields,
+			methods,
+		});
 		for (const method of methods) {
 			this.add(method.name, method);
 		}
@@ -291,5 +348,15 @@ export class SymbolTable {
 
 	getNamespace(name: string): SymbolTable | undefined {
 		return this.namespaces.get(name) || this.parent?.getNamespace(name);
+	}
+
+	getScopeAtLine(line: number): FunctionScope | undefined {
+		for (let i = this.functionScopes.length - 1; i >= 0; i--) {
+			const s = this.functionScopes[i];
+			if (line >= s.startLine && line <= s.endLine) {
+				return s;
+			}
+		}
+		return undefined;
 	}
 }
